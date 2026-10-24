@@ -42,7 +42,7 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "status": "approved",
     "claimedBy": null,
     "claimedAt": null,
-    "isActive": true,
+    "isActive": false,
     "createdAt": "2026-10-24T08:10:00.000Z",
     "adminNotes": ""
   },

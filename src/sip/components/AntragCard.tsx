@@ -54,12 +54,12 @@ export const AntragCard: React.FC<AntragCardProps> = ({
     <div
       id={`antrag-${antrag.id}`}
       onClick={() => {
-        if (isStrategieLeader && !antrag.isActive) {
+        if (isStrategieLeader) {
           onActivate(antrag);
         }
       }}
       className={`relative rounded-2xl border transition-all duration-300 p-4 sm:p-5 ${
-        isStrategieLeader && !antrag.isActive ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
+        isStrategieLeader ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
       } ${
         antrag.isActive
           ? 'bg-slate-900 border-sky-400 ring-2 ring-sky-400/40 shadow-xl shadow-sky-500/10'

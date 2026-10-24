@@ -36,6 +36,8 @@ export const App: React.FC = () => {
         return {
           ...DEFAULT_SIP_SETTINGS,
           ...parsed,
+          supabaseUrl: parsed.supabaseUrl?.trim() || DEFAULT_SIP_SETTINGS.supabaseUrl,
+          supabaseAnonKey: parsed.supabaseAnonKey?.trim() || DEFAULT_SIP_SETTINGS.supabaseAnonKey,
           adminPassword: parsed.adminPassword || 'admin2026!',
           strategiePassword: parsed.strategiePassword || 'strategie2026',
           totpSecret: parsed.totpSecret || '',

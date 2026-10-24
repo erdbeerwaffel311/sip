@@ -54,6 +54,7 @@ class SipRealtimeService {
   }
 
   private hasLoadedCloudSession = false;
+  private cachedSettings: AppSettings | null = null;
 
   private mergeWithFreshPreFabs(session: Partial<SipSession>): SipSession {
     let activeId = session.activeAntragId !== undefined ? session.activeAntragId : null;
@@ -112,31 +113,29 @@ class SipRealtimeService {
     const newActiveId = merged.activeAntragId;
     const isNewActive = Boolean(newActiveId && newActiveId !== prevActiveId);
 
-    if (!this.hasLoadedCloudSession || isNewActive || merged.updatedAt >= this.currentSession.updatedAt) {
-      this.hasLoadedCloudSession = true;
-      this.currentSession = merged;
-      this.notify();
+    // Supabase ist die offizielle Single Source of Truth für alle Teilnehmer im Plenum
+    this.hasLoadedCloudSession = true;
+    this.currentSession = merged;
+    this.notify();
 
-      if (isNewActive && newActiveId) {
-        const newlyActiveAntrag = merged.antraege.find((a) => a.id === newActiveId);
-        if (newlyActiveAntrag) {
-          this.triggerBlurPopup(newlyActiveAntrag);
-          this.triggerNotification({
-            id: `notif_${Date.now()}`,
-            title: '🚨 Neuer Antrag aufgerufen!',
-            message: `${newlyActiveAntrag.title} wird jetzt im Parlament verhandelt.`,
-            type: 'motion',
-            timestamp: new Date().toISOString(),
-            antragId: newlyActiveAntrag.id,
-          });
-        }
+    if (isNewActive && newActiveId) {
+      const newlyActiveAntrag = merged.antraege.find((a) => a.id === newActiveId);
+      if (newlyActiveAntrag) {
+        this.triggerBlurPopup(newlyActiveAntrag);
+        this.triggerNotification({
+          id: `notif_${Date.now()}`,
+          title: '🚨 Neuer Antrag aufgerufen!',
+          message: `${newlyActiveAntrag.title} wird jetzt im Parlament verhandelt.`,
+          type: 'motion',
+          timestamp: new Date().toISOString(),
+          antragId: newlyActiveAntrag.id,
+        });
       }
     }
   }
 
   public init(settings: AppSettings) {
-    if (this.isInitialized) return;
-    this.isInitialized = true;
+    this.cachedSettings = settings;
 
     // Lade gespeicherte Session aus LocalStorage
     try {
@@ -152,16 +151,15 @@ class SipRealtimeService {
     // Verbinde mit Supabase Realtime
     this.setupSupabase(settings);
 
-    // Versuche neuesten Stand aus Supabase abzurufen
+    // Versuche neuesten Stand sofort aus Supabase abzurufen
     this.fetchFromSupabase(settings).catch(() => {});
 
     // Schneller Sync-Takt alle 2 Sekunden zur garantierten Ausfallsicherheit
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
+    if (!this.syncInterval) {
+      this.syncInterval = setInterval(() => {
+        this.fetchFromSupabase(this.cachedSettings || settings).catch(() => {});
+      }, 2000);
     }
-    this.syncInterval = setInterval(() => {
-      this.fetchFromSupabase(settings).catch(() => {});
-    }, 2000);
   }
 
   public setupSupabase(settings: AppSettings) {
@@ -281,9 +279,7 @@ class SipRealtimeService {
     }
 
     // 3. Persistenz in Supabase im Hintergrund anstoßen
-    if (settings) {
-      this.syncSessionToSupabase(settings, this.currentSession).catch(() => {});
-    }
+    this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession).catch(() => {});
   }
 
   private handleIncomingMessage(msg: SipRealtimeMessage) {
@@ -798,8 +794,8 @@ class SipRealtimeService {
 
   // --- SUPABASE PERSISTENCE ---
 
-  private async fetchFromSupabase(settings: AppSettings) {
-    const client = getSupabaseClient(settings);
+  private async fetchFromSupabase(settings?: AppSettings) {
+    const client = getSupabaseClient(settings || this.cachedSettings || undefined);
     if (!client) return;
 
     try {
@@ -819,19 +815,24 @@ class SipRealtimeService {
     }
   }
 
-  public async syncSessionToSupabase(settings: AppSettings, session: SipSession) {
-    const client = getSupabaseClient(settings);
+  public async syncSessionToSupabase(settings?: AppSettings, session?: SipSession) {
+    const client = getSupabaseClient(settings || this.cachedSettings || undefined);
     if (!client) return;
 
+    const sess = session || this.currentSession;
     try {
-      await client.from('keller_items').upsert({
+      const { error } = await client.from('keller_items').upsert({
         id: SIP_DB_ROW_ID,
-        name: `SiP Session: ${session.title}`,
+        name: `SiP Session: ${sess.title}`,
         category: '__sip_system__',
         quantity: 1,
         updated_at: new Date().toISOString(),
-        payload: session,
+        payload: sess,
       });
+
+      if (error) {
+        console.error('[SiP Realtime] Error persisting session to Supabase:', error);
+      }
     } catch (err) {
       console.warn('Could not persist SiP session to Supabase:', err);
     }

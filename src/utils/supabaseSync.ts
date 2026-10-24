@@ -17,9 +17,15 @@ export function normalizeSupabaseUrl(rawUrl: string | undefined): string {
   return rawUrl.trim().replace(/\/rest\/v1\/?.*$/i, '').replace(/\/+$/, '');
 }
 
-export function getSupabaseClient(settings: AppSettings): SupabaseClient | null {
-  const url = normalizeSupabaseUrl(settings.supabaseUrl);
-  const key = settings.supabaseAnonKey?.trim();
+export const DEFAULT_SUPABASE_URL = 'https://zdduvvluqairhnbdbunk.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_CEjKQudAlYxYtTvykEwDxw_E4KvyUhC';
+
+export function getSupabaseClient(settings?: Partial<AppSettings> | null): SupabaseClient | null {
+  const rawUrl = settings?.supabaseUrl?.trim() || DEFAULT_SUPABASE_URL;
+  const rawKey = settings?.supabaseAnonKey?.trim() || DEFAULT_SUPABASE_ANON_KEY;
+
+  const url = normalizeSupabaseUrl(rawUrl);
+  const key = rawKey;
   if (!url || !key) return null;
 
   const cacheToken = `${url}::${key}`;

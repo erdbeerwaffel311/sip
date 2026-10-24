@@ -16,14 +16,12 @@ import {
 
 interface SipLoginViewProps {
   memberAccounts: MemberAccount[];
-  adminPassword: string;
   strategiePassword: string;
-  onLoginSuccess: (account: MemberAccount, isLeader: boolean) => void;
+  onLoginSuccess: (account: MemberAccount) => void;
 }
 
 export const SipLoginView: React.FC<SipLoginViewProps> = ({
   memberAccounts,
-  adminPassword,
   strategiePassword,
   onLoginSuccess,
 }) => {
@@ -61,38 +59,16 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
 
     const lowerUser = rawUser.toLowerCase();
 
-    // 1. Eigener Admin-Account (Administrator)
-    if (lowerUser === 'admin' || lowerUser === 'administrator') {
-      const validAdminPass = adminPassword && adminPassword !== 'admin' ? adminPassword : 'admin2026!';
-      if (rawPass === validAdminPass) {
-        onLoginSuccess(
-          {
-            name: 'Administrator',
-            username: 'admin',
-            password: rawPass,
-            role: 'admin',
-          },
-          true
-        );
-        return;
-      }
-      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
-      return;
-    }
-
-    // 2. Eigener Strategieführung-Systemaccount
+    // 1. Eigener Strategieführung-Systemaccount (optional)
     if (lowerUser === 'strategieführung' || lowerUser === 'strategie' || lowerUser === 'leitung') {
       const validStratPass = strategiePassword && strategiePassword !== 'admin' ? strategiePassword : 'strategie2026';
       if (rawPass === validStratPass) {
-        onLoginSuccess(
-          {
-            name: 'Strategieführung',
-            username: 'strategie@schuelerunion.at',
-            password: rawPass,
-            role: 'strategie',
-          },
-          true
-        );
+        onLoginSuccess({
+          name: 'Strategieführung',
+          username: 'strategie@schuelerunion.at',
+          password: rawPass,
+          role: 'strategie',
+        });
         return;
       }
       setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
@@ -132,9 +108,8 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
       return;
     }
 
-    // Wenn Person zur Strategieführung erhoben wurde, direkt mit Führungsrechten anmelden!
-    const isLeader = matchedAccount.role === 'strategie';
-    onLoginSuccess(matchedAccount, isLeader);
+    // Wenn Person zur Strategieführung erhoben wurde, hat das Konto role === 'strategie'
+    onLoginSuccess(matchedAccount);
   }
 
   return (

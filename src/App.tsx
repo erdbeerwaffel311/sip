@@ -72,17 +72,8 @@ export const App: React.FC = () => {
       verifyAdmin2FACode(settings, settings.adminEmail, window.location.href).then((ok) => {
         if (ok) {
           setIsAdminUnlocked(true);
+          localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
           setCurrentView('admin');
-          if (!currentUser) {
-            const adminAcc: MemberAccount = {
-              name: 'Administrator',
-              username: 'admin',
-              password: settings.adminPassword,
-              role: 'admin',
-            };
-            setCurrentUser(adminAcc);
-            localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(adminAcc));
-          }
           window.history.replaceState({}, document.title, window.location.pathname);
         }
       });
@@ -150,13 +141,9 @@ export const App: React.FC = () => {
     }
   }
 
-  function handleLoginSuccess(account: MemberAccount, isLeader: boolean) {
+  function handleLoginSuccess(account: MemberAccount) {
     setCurrentUser(account);
     localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(account));
-    if (isLeader || account.role === 'admin') {
-      setIsAdminUnlocked(true);
-      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-    }
   }
 
   function handleLogout() {
@@ -168,12 +155,13 @@ export const App: React.FC = () => {
   }
 
   function handleAdminButtonClick() {
-    if (isAdminUnlocked || currentUser?.role === 'admin') {
+    if (isAdminUnlocked) {
       setCurrentView(currentView === 'admin' ? 'parliament' : 'admin');
     } else {
       const pass = prompt('Bitte Administrator-Passwort eingeben:');
       if (pass !== null && pass === settings.adminPassword) {
         setIsAdminUnlocked(true);
+        localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
         setCurrentView('admin');
       } else if (pass !== null) {
         alert('ungültiges Passwort, bitte versuche es erneut!');
@@ -186,7 +174,6 @@ export const App: React.FC = () => {
     return (
       <SipLoginView
         memberAccounts={settings.memberAccounts}
-        adminPassword={settings.adminPassword}
         strategiePassword={settings.strategiePassword}
         onLoginSuccess={handleLoginSuccess}
       />

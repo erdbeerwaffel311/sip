@@ -23,6 +23,10 @@ import {
   XCircle,
   Copy,
   Mic,
+  Archive,
+  Download,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -43,6 +47,8 @@ import { MotionParserModal } from './MotionParserModal';
 import { DriveFolderViewer } from './DriveFolderViewer';
 import { MemeFeedTab } from './MemeFeedTab';
 import { StrategyNotesTab } from './StrategyNotesTab';
+import { SipArchiveView } from './SipArchiveView';
+import { downloadSipProtocol } from '../utils/protocolExporter';
 
 interface SipMainViewProps {
   settings: AppSettings;
@@ -50,7 +56,7 @@ interface SipMainViewProps {
   isAdminUnlocked: boolean;
 }
 
-export type SipSubTab = 'antraege' | 'strategy' | 'drive' | 'memes';
+export type SipSubTab = 'antraege' | 'strategy' | 'drive' | 'memes' | 'archive';
 
 export const SipMainView: React.FC<SipMainViewProps> = ({
   settings,
@@ -79,6 +85,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   const [editingAntrag, setEditingAntrag] = useState<SipAntrag | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
   const [hasCopiedHeroRede, setHasCopiedHeroRede] = useState(false);
+  const [isHeroTextExpanded, setIsHeroTextExpanded] = useState(false);
 
   // Filter
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
@@ -180,8 +187,8 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   }, [activeAntrag, session.antraege]);
 
   // Handlers
-  function handleActivateAntrag(antragId: string) {
-    sipRealtime.activateAntrag(antragId, settings);
+  async function handleActivateAntrag(antragId: string) {
+    await sipRealtime.activateAntrag(antragId, settings);
   }
 
   function handleClearActiveAntrag() {
@@ -357,10 +364,12 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   const target = confirmActivateAntrag;
                   setConfirmActivateAntrag(null);
-                  handleActivateAntrag(target.id);
+                  if (target) {
+                    await handleActivateAntrag(target.id);
+                  }
                   // Kein Blur-Overlay für Strategieführung!
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/25 transition cursor-pointer"
@@ -413,7 +422,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-sky-400 uppercase tracking-wider">
-                SiP Parlament Live-Tool
+                SiP Live-Tool
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-semibold text-emerald-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -426,13 +435,24 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Role toggle & User badge */}
-        <div className="flex items-center gap-3 flex-wrap">
+        {/* Right: Role toggle, User badge & Protocol download */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
             <User className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-slate-400">Angemeldet:</span>
             <strong className="text-slate-200">{currentUserName}</strong>
           </div>
+
+          {/* Protokoll Export Button */}
+          <button
+            type="button"
+            onClick={() => downloadSipProtocol(session)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-950 hover:bg-slate-850 hover:border-sky-500/40 border border-slate-800 text-xs text-sky-300 font-semibold transition cursor-pointer shadow-sm"
+            title="Sitzungsprotokoll & Audit-Log als Textdatei herunterladen"
+          >
+            <Download className="w-3.5 h-3.5 text-sky-400" />
+            <span>Protokoll exportieren</span>
+          </button>
 
           {/* Strategieführung Toggle */}
           <button
@@ -554,6 +574,22 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             {session.memes.length}
           </span>
         </button>
+
+        {/* Subtab 5: Archiv (nur Strategieführung / Admin) */}
+        {isStrategieLeader && (
+          <button
+            type="button"
+            onClick={() => setCurrentSubTab('archive')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
+              currentSubTab === 'archive'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            <Archive className="w-4 h-4 text-amber-400" />
+            <span>Archiv & Protokolle</span>
+          </button>
+        )}
       </div>
 
       {/* Subtab 1: Anträge & Wortmeldungen */}
@@ -882,13 +918,53 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                             )}
                           </button>
                         </div>
-                        <div className="text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                        <div className={`text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans ${isHeroTextExpanded ? '' : 'line-clamp-2'}`}>
                           {activeAntrag.rede}
                         </div>
+                        {(activeAntrag.rede.length > 120 || activeAntrag.rede.includes('\n')) && (
+                          <button
+                            type="button"
+                            onClick={() => setIsHeroTextExpanded(!isHeroTextExpanded)}
+                            className="mt-2.5 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition"
+                          >
+                            {isHeroTextExpanded ? (
+                              <>
+                                <ChevronUp className="w-3.5 h-3.5" />
+                                <span>Weniger anzeigen</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                                <span>Ganzen Redetext anzeigen</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans shadow-inner">
-                        {activeAntrag.content}
+                        <div className={`${isHeroTextExpanded ? '' : 'line-clamp-2'}`}>
+                          {activeAntrag.content}
+                        </div>
+                        {(activeAntrag.content.length > 120 || activeAntrag.content.includes('\n')) && (
+                          <button
+                            type="button"
+                            onClick={() => setIsHeroTextExpanded(!isHeroTextExpanded)}
+                            className="mt-2.5 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition"
+                          >
+                            {isHeroTextExpanded ? (
+                              <>
+                                <ChevronUp className="w-3.5 h-3.5" />
+                                <span>Weniger anzeigen</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3.5 h-3.5" />
+                                <span>Ganzen Antragstext anzeigen</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -1176,6 +1252,18 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           currentUserName={currentUserName}
           onAddMeme={handleAddMeme}
           onReactMeme={handleReactMeme}
+        />
+      )}
+
+      {/* Subtab 5: Archiv & Protokolle (nur Strategieführung & Admin) */}
+      {currentSubTab === 'archive' && isStrategieLeader && (
+        <SipArchiveView
+          currentSession={session}
+          settings={settings}
+          currentUserName={currentUserName}
+          onStartNewSession={async (newTitle) => {
+            await sipRealtime.startNewSession(newTitle, settings);
+          }}
         />
       )}
     </div>

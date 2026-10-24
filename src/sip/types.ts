@@ -55,6 +55,39 @@ export interface SipMeme {
   reactions: Record<string, string[]>; // emoji -> array of usernames
 }
 
+export interface SipActivityLogEntry {
+  id: string;
+  timestamp: string;
+  performedBy: string;
+  action:
+    | 'ANTRAG_ACTIVATED'
+    | 'ANTRAG_CLEARED'
+    | 'ANTRAG_CLAIMED'
+    | 'ANTRAG_UNCLAIMED'
+    | 'ANTRAG_SUBMITTED'
+    | 'ANTRAG_APPROVED'
+    | 'ANTRAG_REJECTED'
+    | 'ANTRAG_EDITED'
+    | 'ANTRAG_DELETED'
+    | 'VOTE_REC_SET'
+    | 'MEME_ADDED'
+    | 'SESSION_ARCHIVED'
+    | 'NOTE_UPDATED';
+  antragId?: string;
+  antragTitle?: string;
+  details: string;
+}
+
+export interface SipArchivedSession {
+  id: string;
+  sessionTitle: string;
+  archivedAt: string;
+  archivedBy: string;
+  antraegeCount: number;
+  activityCount: number;
+  sessionData: SipSession;
+}
+
 export interface SipSession {
   id: string;
   title: string;
@@ -64,6 +97,7 @@ export interface SipSession {
   voteRecommendation: VoteRecommendation;
   antraege: SipAntrag[];
   memes: SipMeme[];
+  activityLog?: SipActivityLogEntry[];
   updatedAt: string;
 }
 
@@ -157,5 +191,6 @@ export const DEFAULT_SIP_SESSION: SipSession = {
       },
     },
   ],
+  activityLog: [],
   updatedAt: new Date().toISOString(),
 };

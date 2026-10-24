@@ -6,9 +6,11 @@ import {
   SipNotification,
   SipSession,
   VoteRecommendation,
+  SipActivityLogEntry,
 } from './types';
 import { AppSettings } from '../types';
 import { getSupabaseClient } from '../utils/supabaseSync';
+import { archiveCurrentSession } from './utils/archiveService';
 
 export const SIP_STORAGE_KEY = 'sip_current_session_v1';
 export const SIP_NOTIFICATION_STORAGE_KEY = 'sip_recent_notifications_v1';
@@ -226,6 +228,12 @@ class SipRealtimeService {
     return () => this.activeBlurPopupListeners.delete(cb);
   }
 
+  private saveToStorage() {
+    try {
+      localStorage.setItem(SIP_STORAGE_KEY, JSON.stringify(this.currentSession));
+    } catch {}
+  }
+
   private notify() {
     this.listeners.forEach((cb) => {
       try {
@@ -234,9 +242,7 @@ class SipRealtimeService {
         console.error('Error in session listener:', err);
       }
     });
-    try {
-      localStorage.setItem(SIP_STORAGE_KEY, JSON.stringify(this.currentSession));
-    } catch {}
+    this.saveToStorage();
   }
 
   private triggerNotification(notif: SipNotification) {
@@ -423,14 +429,35 @@ class SipRealtimeService {
     }
   }
 
-  // --- ACTIONS ---
+  // --- ACTIONS & AUDIT LOGGING ---
+
+  public logActivity(entry: Omit<SipActivityLogEntry, 'id' | 'timestamp'>) {
+    const fullEntry: SipActivityLogEntry = {
+      ...entry,
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+    };
+    const currentLogs = this.currentSession.activityLog || [];
+    this.currentSession = {
+      ...this.currentSession,
+      activityLog: [fullEntry, ...currentLogs].slice(0, 500),
+    };
+  }
 
   /**
    * Strategieführung ruft einen neuen Antrag auf (ploppt auf allen Geräten auf!)
    */
-  public activateAntrag(antragId: string, settings?: AppSettings) {
+  public async activateAntrag(antragId: string, settings?: AppSettings) {
     const antrag = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!antrag) return;
+
+    this.logActivity({
+      action: 'ANTRAG_ACTIVATED',
+      antragId,
+      antragTitle: antrag.title,
+      performedBy: 'Strategieführung',
+      details: `Antrag "${antrag.title}" im Plenum aufgerufen`,
+    });
 
     this.currentSession = {
       ...this.currentSession,
@@ -448,6 +475,7 @@ class SipRealtimeService {
       })),
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     const msg: SipRealtimeMessage = {
@@ -462,12 +490,20 @@ class SipRealtimeService {
       session: this.currentSession,
     };
     this.broadcastMessage(stateMsg, settings);
+
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
   /**
    * Strategieführung beendet den aktuellen Aufruf (Pause / Zwischenabstimmung)
    */
-  public clearActiveAntrag(settings?: AppSettings) {
+  public async clearActiveAntrag(settings?: AppSettings) {
+    this.logActivity({
+      action: 'ANTRAG_CLEARED',
+      performedBy: 'Strategieführung',
+      details: 'Aufruf im Plenum beendet (Pause)',
+    });
+
     this.currentSession = {
       ...this.currentSession,
       activeAntragId: null,
@@ -477,6 +513,7 @@ class SipRealtimeService {
       })),
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     const msg: SipRealtimeMessage = {
@@ -484,6 +521,7 @@ class SipRealtimeService {
       session: this.currentSession,
     };
     this.broadcastMessage(msg, settings);
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
   /**
@@ -498,11 +536,19 @@ class SipRealtimeService {
       isPublished: rec.isPublished ?? true,
       updatedAt: new Date().toISOString(),
     };
+
+    this.logActivity({
+      action: 'VOTE_REC_SET',
+      performedBy: fullRec.updatedBy || 'Strategieführung',
+      details: `Offizielle Abstimmungsempfehlung geändert: ${fullRec.type}${fullRec.note ? ` (${fullRec.note})` : ''}`,
+    });
+
     this.currentSession = {
       ...this.currentSession,
       voteRecommendation: fullRec,
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     if (fullRec.isPublished && fullRec.type !== 'KEINE') {
@@ -529,6 +575,14 @@ class SipRealtimeService {
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!target) return;
 
+    this.logActivity({
+      action: 'ANTRAG_CLAIMED',
+      antragId,
+      antragTitle: target.title,
+      performedBy: memberName,
+      details: `${memberName} hat Rede geclaimed: "${target.title}"`,
+    });
+
     const claimedAt = new Date().toISOString();
     this.currentSession = {
       ...this.currentSession,
@@ -537,6 +591,7 @@ class SipRealtimeService {
       ),
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     // Lokaler Toast sofort für den Nutzer
@@ -565,6 +620,14 @@ class SipRealtimeService {
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!target) return;
 
+    this.logActivity({
+      action: 'ANTRAG_UNCLAIMED',
+      antragId,
+      antragTitle: target.title,
+      performedBy: memberName,
+      details: `${memberName} hat Claim abgegeben: "${target.title}"`,
+    });
+
     this.currentSession = {
       ...this.currentSession,
       antraege: this.currentSession.antraege.map((a) =>
@@ -572,6 +635,7 @@ class SipRealtimeService {
       ),
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     const msg: SipRealtimeMessage = {
@@ -600,11 +664,20 @@ class SipRealtimeService {
       claimedAt: new Date().toISOString(),
     };
 
+    this.logActivity({
+      action: 'ANTRAG_SUBMITTED',
+      antragId: newAntrag.id,
+      antragTitle: newAntrag.title,
+      performedBy: antragData.author,
+      details: `${antragData.author} hat [${newAntrag.type}] eingereicht: "${newAntrag.title}"`,
+    });
+
     this.currentSession = {
       ...this.currentSession,
       antraege: [newAntrag, ...this.currentSession.antraege],
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
     const msg: SipRealtimeMessage = {
@@ -636,6 +709,21 @@ class SipRealtimeService {
       }),
       updatedAt: new Date().toISOString(),
     };
+
+    if (updatedObj) {
+      const actAction = updates.status === 'approved' ? 'ANTRAG_APPROVED' : updates.status === 'rejected' ? 'ANTRAG_REJECTED' : 'ANTRAG_EDITED';
+      const actDetail = updates.status === 'approved' ? `Antrag "${(updatedObj as SipAntrag).title}" bestätigt & freigegeben` : updates.status === 'rejected' ? `Antrag "${(updatedObj as SipAntrag).title}" abgelehnt` : `Antrag "${(updatedObj as SipAntrag).title}" redaktionell bearbeitet`;
+
+      this.logActivity({
+        action: actAction,
+        antragId,
+        antragTitle: (updatedObj as SipAntrag).title,
+        performedBy: 'Strategieführung',
+        details: actDetail,
+      });
+    }
+
+    this.saveToStorage();
     this.notify();
 
     if (updatedObj) {
@@ -651,6 +739,17 @@ class SipRealtimeService {
    * Löscht einen Antrag
    */
   public deleteAntrag(antragId: string, settings?: AppSettings) {
+    const target = this.currentSession.antraege.find((a) => a.id === antragId);
+    if (target) {
+      this.logActivity({
+        action: 'ANTRAG_DELETED',
+        antragId,
+        antragTitle: target.title,
+        performedBy: 'Strategieführung',
+        details: `Antrag "${target.title}" gelöscht`,
+      });
+    }
+
     this.currentSession = {
       ...this.currentSession,
       antraege: this.currentSession.antraege.filter((a) => a.id !== antragId),
@@ -660,11 +759,40 @@ class SipRealtimeService {
           : this.currentSession.activeAntragId,
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
 
-    if (settings) {
-      this.syncSessionToSupabase(settings, this.currentSession).catch(() => {});
-    }
+    this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession).catch(() => {});
+  }
+
+  /**
+   * Archiviert die aktuelle Sitzung und startet ein neues SiP
+   */
+  public async startNewSession(newTitle: string, settings?: AppSettings): Promise<void> {
+    const oldSession = { ...this.currentSession };
+    await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
+
+    this.currentSession = {
+      ...DEFAULT_SIP_SESSION,
+      id: `session_${Date.now()}`,
+      title: newTitle.trim() || DEFAULT_SIP_SESSION.title,
+      activeAntragId: null,
+      activityLog: [
+        {
+          id: `act_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          performedBy: 'Strategieführung',
+          action: 'SESSION_ARCHIVED',
+          details: `Neue Sitzung "${newTitle.trim() || DEFAULT_SIP_SESSION.title}" gestartet. Vorherige Sitzung "${oldSession.title}" wurde im Archiv gesichert.`,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveToStorage();
+    this.notify();
+
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
+    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
   }
 
   /**

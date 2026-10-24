@@ -212,15 +212,59 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                   )}
                 </button>
               </div>
-              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+              <p className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans ${isExpanded ? '' : 'line-clamp-2'}`}>
                 {antrag.rede}
               </p>
+              {(antrag.rede.length > 120 || antrag.rede.includes('\n')) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(!isExpanded);
+                  }}
+                  className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-sky-400 hover:text-sky-300 transition cursor-pointer"
+                >
+                  {isExpanded ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Weniger anzeigen</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>Ganzen Text anzeigen</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           ) : (
             <div className="bg-slate-950/60 p-3 sm:p-4 rounded-xl border border-slate-800/80 mb-2">
-              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+              <p className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans ${isExpanded ? '' : 'line-clamp-2'}`}>
                 {antrag.content}
               </p>
+              {(antrag.content.length > 120 || antrag.content.includes('\n')) && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(!isExpanded);
+                  }}
+                  className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-sky-400 hover:text-sky-300 transition cursor-pointer"
+                >
+                  {isExpanded ? (
+                    <>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                      <span>Weniger anzeigen</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3.5 h-3.5" />
+                      <span>Ganzen Text anzeigen</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
 

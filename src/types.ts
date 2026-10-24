@@ -2,7 +2,7 @@ export interface MemberAccount {
   name: string;
   username: string;
   password: string;
-  role?: 'mitglied' | 'gast' | 'presse' | 'strategie';
+  role?: 'mitglied' | 'gast' | 'presse' | 'strategie' | 'admin';
   isExternal?: boolean;
   /** ISO-String wenn der Zugang zeitlich begrenzt ist, ansonsten null/undefined */
   expiresAt?: string | null;
@@ -13,6 +13,7 @@ export interface MemberAccount {
 export interface AppSettings {
   clubName: string;
   adminPassword: string;
+  strategiePassword: string;
   adminEmail?: string;
   allowedMembers: string[];
   memberAccounts: MemberAccount[];
@@ -136,7 +137,8 @@ export function isAccountExpired(account: MemberAccount): boolean {
 
 export const DEFAULT_SIP_SETTINGS: AppSettings = {
   clubName: 'Schüler:innenparlament (SiP)',
-  adminPassword: 'strategie2026',
+  adminPassword: 'admin2026!',
+  strategiePassword: 'strategie2026',
   adminEmail: '',
   allowedMembers: DEFAULT_ALLOWED_MEMBERS,
   memberAccounts: DEFAULT_ALLOWED_MEMBERS.map((name) => ({

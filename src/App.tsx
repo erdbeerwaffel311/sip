@@ -2,16 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   Gavel,
   ShieldCheck,
-  ShieldAlert,
   User,
-  Settings as SettingsIcon,
   LogOut,
-  Users,
-  Key,
+  Star,
 } from 'lucide-react';
 import {
   AppSettings,
-  DEFAULT_ALLOWED_MEMBERS,
   DEFAULT_SIP_SETTINGS,
   isAccountExpired,
   MemberAccount,
@@ -19,12 +15,12 @@ import {
 import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
-import { getSupabaseClient } from './utils/supabaseSync';
+import { getSupabaseClient, verifyAdmin2FACode } from './utils/supabaseSync';
 
 const STORAGE_KEYS = {
-  SETTINGS: 'sip_standalone_settings_v2',
-  LOGGED_USER: 'sip_logged_in_user_v2',
-  ADMIN_UNLOCKED: 'sip_admin_unlocked_v2',
+  SETTINGS: 'sip_standalone_settings_v3',
+  LOGGED_USER: 'sip_logged_in_user_v3',
+  ADMIN_UNLOCKED: 'sip_admin_unlocked_v3',
 };
 
 export const App: React.FC = () => {
@@ -33,10 +29,15 @@ export const App: React.FC = () => {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.adminPassword === 'admin' || !parsed.adminPassword) {
-          parsed.adminPassword = 'strategie2026';
+        if (parsed.adminPassword === 'admin') {
+          parsed.adminPassword = 'admin2026!';
         }
-        return { ...DEFAULT_SIP_SETTINGS, ...parsed, adminPassword: parsed.adminPassword };
+        return {
+          ...DEFAULT_SIP_SETTINGS,
+          ...parsed,
+          adminPassword: parsed.adminPassword || 'admin2026!',
+          strategiePassword: parsed.strategiePassword || 'strategie2026',
+        };
       }
     } catch {}
     return DEFAULT_SIP_SETTINGS;
@@ -59,12 +60,40 @@ export const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<'parliament' | 'admin'>('parliament');
 
+  // Automatische Erkennung beim Öffnen über den 2FA-Bestätigungslink aus der E-Mail (wie im Inventurprogramm)
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const has2FAParam =
+      url.searchParams.get('2fa') === 'verify' ||
+      url.hash.includes('access_token') ||
+      Boolean(url.searchParams.get('2fa_code'));
+
+    if (has2FAParam && settings.adminEmail) {
+      verifyAdmin2FACode(settings, settings.adminEmail, window.location.href).then((ok) => {
+        if (ok) {
+          setIsAdminUnlocked(true);
+          setCurrentView('admin');
+          if (!currentUser) {
+            const adminAcc: MemberAccount = {
+              name: 'Administrator',
+              username: 'admin',
+              password: settings.adminPassword,
+              role: 'admin',
+            };
+            setCurrentUser(adminAcc);
+            localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(adminAcc));
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      });
+    }
+  }, [settings.adminEmail, currentUser]);
+
   // Cloud Sync für Einstellungen & Accounts
   useEffect(() => {
     const client = getSupabaseClient(settings);
     if (!client) return;
 
-    // Lade neuesten Stand der Benutzerkonten aus Supabase
     async function fetchUsers() {
       try {
         const { data, error } = await client!
@@ -73,11 +102,13 @@ export const App: React.FC = () => {
           .eq('id', '__sip_users_config__')
           .maybeSingle();
 
-        if (!error && data?.payload?.memberAccounts) {
+        if (!error && data?.payload) {
           setSettings((prev) => ({
             ...prev,
-            memberAccounts: data.payload.memberAccounts,
+            memberAccounts: data.payload.memberAccounts || prev.memberAccounts,
             adminPassword: data.payload.adminPassword || prev.adminPassword,
+            strategiePassword: data.payload.strategiePassword || prev.strategiePassword,
+            adminEmail: data.payload.adminEmail ?? prev.adminEmail,
           }));
         }
       } catch {}
@@ -93,15 +124,26 @@ export const App: React.FC = () => {
     const client = getSupabaseClient(newSettings);
     if (client) {
       try {
+        const { data } = await client
+          .from('keller_items')
+          .select('payload')
+          .eq('id', '__sip_users_config__')
+          .maybeSingle();
+
+        const oldPayload = data?.payload || {};
+
         await client.from('keller_items').upsert({
           id: '__sip_users_config__',
-          name: 'SiP Benutzerkonten & Gäste',
+          name: 'SiP Benutzerkonten & Einstellungen',
           category: '__sip_system__',
           quantity: newSettings.memberAccounts.length,
           updated_at: new Date().toISOString(),
           payload: {
+            ...oldPayload,
             memberAccounts: newSettings.memberAccounts,
             adminPassword: newSettings.adminPassword,
+            strategiePassword: newSettings.strategiePassword,
+            adminEmail: newSettings.adminEmail,
           },
         });
       } catch {}
@@ -111,7 +153,7 @@ export const App: React.FC = () => {
   function handleLoginSuccess(account: MemberAccount, isLeader: boolean) {
     setCurrentUser(account);
     localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(account));
-    if (isLeader) {
+    if (isLeader || account.role === 'admin') {
       setIsAdminUnlocked(true);
       localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
     }
@@ -125,12 +167,27 @@ export const App: React.FC = () => {
     localStorage.removeItem(STORAGE_KEYS.ADMIN_UNLOCKED);
   }
 
+  function handleAdminButtonClick() {
+    if (isAdminUnlocked || currentUser?.role === 'admin') {
+      setCurrentView(currentView === 'admin' ? 'parliament' : 'admin');
+    } else {
+      const pass = prompt('Bitte Administrator-Passwort eingeben:');
+      if (pass !== null && pass === settings.adminPassword) {
+        setIsAdminUnlocked(true);
+        setCurrentView('admin');
+      } else if (pass !== null) {
+        alert('ungültiges Passwort, bitte versuche es erneut!');
+      }
+    }
+  }
+
   // 1. Vorgeschaltetes Login-Fenster wenn nicht angemeldet
   if (!currentUser) {
     return (
       <SipLoginView
         memberAccounts={settings.memberAccounts}
         adminPassword={settings.adminPassword}
+        strategiePassword={settings.strategiePassword}
         onLoginSuccess={handleLoginSuccess}
       />
     );
@@ -161,27 +218,34 @@ export const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             {/* View Switch: Parlament vs. Admin-Bereich */}
-            {(isAdminUnlocked || currentUser.role === 'strategie') && (
-              <button
-                type="button"
-                onClick={() =>
-                  setCurrentView(currentView === 'admin' ? 'parliament' : 'admin')
-                }
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
-                  currentView === 'admin'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
-                    : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>{currentView === 'admin' ? 'Zum Parlament' : 'Admin & Gäste'}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleAdminButtonClick}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
+                currentView === 'admin'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>{currentView === 'admin' ? 'Zum Plenum' : 'Admin & Konten'}</span>
+            </button>
 
             {/* User badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-200">
               <User className="w-3.5 h-3.5 text-sky-400" />
               <span className="font-semibold">{currentUser.name}</span>
+              {currentUser.role === 'strategie' && (
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-black flex items-center gap-0.5">
+                  <Star className="w-2.5 h-2.5 fill-current" />
+                  Strategie
+                </span>
+              )}
+              {currentUser.role === 'admin' && (
+                <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/40 px-1.5 py-0.2 rounded font-bold">
+                  Admin
+                </span>
+              )}
               {currentUser.isExternal && (
                 <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.2 rounded font-bold">
                   Gast
@@ -215,7 +279,7 @@ export const App: React.FC = () => {
           <SipMainView
             settings={settings}
             currentMember={currentUser}
-            isAdminUnlocked={isAdminUnlocked || currentUser.role === 'strategie'}
+            isAdminUnlocked={isAdminUnlocked || currentUser.role === 'strategie' || currentUser.role === 'admin'}
           />
         )}
       </main>

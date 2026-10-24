@@ -5,8 +5,6 @@ import {
   User,
   LogIn,
   AlertCircle,
-  Clock,
-  ShieldCheck,
   Eye,
   EyeOff,
 } from 'lucide-react';
@@ -19,12 +17,14 @@ import {
 interface SipLoginViewProps {
   memberAccounts: MemberAccount[];
   adminPassword: string;
+  strategiePassword: string;
   onLoginSuccess: (account: MemberAccount, isLeader: boolean) => void;
 }
 
 export const SipLoginView: React.FC<SipLoginViewProps> = ({
   memberAccounts,
   adminPassword,
+  strategiePassword,
   onLoginSuccess,
 }) => {
   const [usernameInput, setUsernameInput] = useState('');
@@ -44,7 +44,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
           acc.username.toLowerCase().includes(q) ||
           acc.name.toLowerCase().includes(q)
       )
-      .slice(0, 6);
+      .slice(0, 5);
   }, [usernameInput, memberAccounts]);
 
   function handleSubmit(e: React.FormEvent) {
@@ -55,25 +55,35 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
     const rawPass = passwordInput.trim();
 
     if (!rawUser || !rawPass) {
-      setErrorMsg('Bitte gib deinen Benutzernamen und dein Passwort ein.');
+      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
       return;
     }
 
-    // Direkt-Login als Strategieführung (Admin-Passwort)
-    if (
-      rawUser.toLowerCase() === 'admin' ||
-      rawUser.toLowerCase() === 'strategieführung' ||
-      rawUser.toLowerCase() === 'leitung'
-    ) {
-      if (rawPass === 'admin') {
-        setErrorMsg("Das Passwort 'admin' ist nicht mehr gültig. Bitte verwende das neue Strategie-Passwort.");
+    const lowerUser = rawUser.toLowerCase();
+
+    // 1. Eigener Admin-Account (Administrator)
+    if (lowerUser === 'admin' || lowerUser === 'administrator') {
+      const validAdminPass = adminPassword && adminPassword !== 'admin' ? adminPassword : 'admin2026!';
+      if (rawPass === validAdminPass) {
+        onLoginSuccess(
+          {
+            name: 'Administrator',
+            username: 'admin',
+            password: rawPass,
+            role: 'admin',
+          },
+          true
+        );
         return;
       }
+      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
+      return;
+    }
 
-      const effectiveAdminPassword =
-        adminPassword && adminPassword !== 'admin' ? adminPassword : 'strategie2026';
-
-      if (rawPass === effectiveAdminPassword || rawPass === 'strategie2026') {
+    // 2. Eigener Strategieführung-Systemaccount
+    if (lowerUser === 'strategieführung' || lowerUser === 'strategie' || lowerUser === 'leitung') {
+      const validStratPass = strategiePassword && strategiePassword !== 'admin' ? strategiePassword : 'strategie2026';
+      if (rawPass === validStratPass) {
         onLoginSuccess(
           {
             name: 'Strategieführung',
@@ -85,43 +95,46 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
         );
         return;
       }
+      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
+      return;
     }
 
+    // 3. Personen-Accounts (Mitglieder, Gäste, zur Strategieführung ernannte Personen)
     const withDomain = rawUser.includes('@') ? rawUser : `${rawUser}@schuelerunion.at`;
     const normalizedInput = normalizeUsernameForComparison(withDomain);
 
     const matchedAccount = memberAccounts.find(
       (acc) =>
         normalizeUsernameForComparison(acc.username) === normalizedInput ||
-        acc.name.toLowerCase() === rawUser.toLowerCase()
+        acc.name.toLowerCase() === lowerUser
     );
 
     if (!matchedAccount) {
-      setErrorMsg(
-        'Dieser Benutzername ist nicht hinterlegt. Falls du externer Gast bist, lass dir von der Strategieführung einen Gastzugang erstellen.'
-      );
+      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
       return;
     }
 
-    // Prüfe Ablaufzeit (Expiration)
+    // Prüfe Ablaufzeit (Expiration bei Gästen)
     if (isAccountExpired(matchedAccount)) {
       const expDate = new Date(matchedAccount.expiresAt!).toLocaleString('de-AT', {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
       setErrorMsg(
-        `Dieser Gastzugang ist am ${expDate} Uhr abgelaufen. Bitte wende dich an die Strategieführung für eine Verlängerung.`
+        `Dieser Gastzugang ist am ${expDate} Uhr abgelaufen. Bitte wende dich an die Administration für eine Verlängerung.`
       );
       return;
     }
 
     // Passwort-Vergleich
     if (matchedAccount.password !== rawPass) {
-      setErrorMsg('Das eingegebene Passwort ist nicht korrekt. Bitte prüfe deine Zugangsdaten.');
+      setErrorMsg('ungültiger Benutzername oder Passwort, bitte versuche es erneut');
       return;
     }
 
-    onLoginSuccess(matchedAccount, matchedAccount.role === 'strategie');
+    // Wenn Person zur Strategieführung erhoben wurde, direkt mit Führungsrechten anmelden!
+    const isLeader = matchedAccount.role === 'strategie';
+    onLoginSuccess(matchedAccount, isLeader);
   }
 
   return (
@@ -143,7 +156,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
             SiP Live-Tool Login
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Melde dich mit deinem persönlichen SiP-Zugang an
+            Melde dich mit deinen Zugangsdaten an
           </p>
         </div>
 
@@ -155,10 +168,10 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Username / Name Input */}
+          {/* Username Input */}
           <div className="relative">
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Benutzername oder Name
+              Benutzername
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -174,7 +187,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
                   setShowSuggestions(true);
                 }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="z.B. Simon Märker oder simon.maerker"
+                placeholder="Benutzername"
                 className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
               />
             </div>
@@ -205,7 +218,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
           {/* Password Input */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              SiP-Passwort
+              Passwort
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -217,7 +230,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
                 autoComplete="current-password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Dein SiP-Passwort eingeben"
+                placeholder="Passwort"
                 className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 font-mono"
               />
               <button

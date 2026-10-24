@@ -323,18 +323,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (!isStrategieLeader && !isAdminUnlocked) {
-                const pass = prompt('Bitte Passwort für die Strategieführung (Admin) eingeben:');
-                const validAdminPass =
-                  settings.adminPassword && settings.adminPassword !== 'admin'
-                    ? settings.adminPassword
-                    : 'strategie2026';
-                if (pass === 'admin') {
-                  alert("Das Passwort 'admin' ist nicht mehr gültig.");
-                } else if (pass !== null && (pass === validAdminPass || pass === 'strategie2026')) {
+              if (!isStrategieLeader && !isAdminUnlocked && currentMember.role !== 'strategie' && currentMember.role !== 'admin') {
+                const pass = prompt('Bitte Passwort für die Strategieführung eingeben:');
+                const validPass = settings.strategiePassword || 'strategie2026';
+                if (pass !== null && pass === validPass) {
                   setIsStrategieLeader(true);
                 } else if (pass !== null) {
-                  alert('Ungültiges Passwort für die Strategieführung.');
+                  alert('ungültiges Passwort, bitte versuche es erneut!');
                 }
               } else {
                 setIsStrategieLeader(!isStrategieLeader);

@@ -15,6 +15,7 @@ import {
 import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
+import { sipRealtime } from './sip/sipRealtime';
 import { getSupabaseClient, verifyAdmin2FACode, querySipRow, upsertSipRow } from './utils/supabaseSync';
 import { verifyTotpCode } from './utils/totp';
 
@@ -152,6 +153,11 @@ export const App: React.FC = () => {
       } catch {}
     }
     fetchUsers();
+  }, [settings.supabaseUrl, settings.supabaseAnonKey]);
+
+  // Initialisiere SiP-Realtime sofort beim Start der App (lädt __sip_session_current__ sofort aus Supabase)
+  useEffect(() => {
+    sipRealtime.init(settings);
   }, [settings.supabaseUrl, settings.supabaseAnonKey]);
 
   async function handleSaveSettings(newSettings: AppSettings) {

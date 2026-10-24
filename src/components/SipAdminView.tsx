@@ -1050,9 +1050,9 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
                 <strong>Hintergrund:</strong> Die Tabellennamen <code className="text-slate-400">keller_items</code> und <code className="text-slate-400">keller_transactions</code> stammen aus der ursprünglichen Vereinskeller-App, die denselben Supabase-Account genutzt hat.
               </p>
               <ul className="list-disc list-inside space-y-1 text-slate-300 pt-1">
+                <li><strong className="text-emerald-300">Aktive SiP-Tabelle (keller_items):</strong> Der Programmcode liest, schreibt und lauscht via Realtime einheitlich und direkt auf <code className="text-emerald-300">keller_items</code>. Die Live-Daten und Benutzerkonten sind sofort synchron.</li>
                 <li><strong className="text-rose-300">keller_transactions:</strong> Wird im SiP-Parlament zu <strong>100% nicht verwendet</strong> und kann ignoriert oder in Supabase gelöscht werden.</li>
-                <li><strong className="text-sky-300">sip_items:</strong> Die neue dedizierte Tabelle für SiP. Der Programmcode fragt primär <code className="text-sky-300">sip_items</code> ab.</li>
-                <li><strong className="text-emerald-300">Automatischer Fallback aktiv:</strong> Solange <code className="text-sky-300">sip_items</code> noch nicht existiert, greift das Programm automatisch auf <code className="text-amber-300">keller_items</code> zurück. Es bricht also niemals etwas ab!</li>
+                <li><strong className="text-sky-300">Optionale Migration auf sip_items:</strong> Falls du die Tabelle in Supabase sauber umbenennen möchtest, führe das SQL-Skript unten aus.</li>
               </ul>
             </div>
 

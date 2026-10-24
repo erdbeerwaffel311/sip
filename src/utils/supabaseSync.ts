@@ -44,13 +44,16 @@ export function getSupabaseClient(settings?: Partial<AppSettings> | null): Supab
   }
 }
 
-export const PRIMARY_SIP_TABLE = 'sip_items';
-export const FALLBACK_SIP_TABLE = 'keller_items';
+/**
+ * Einheitliche SiP-Tabelle in Supabase:
+ * Wir setzen durchgehend auf 'keller_items', da diese Tabelle in Supabase
+ * bereits existiert, alle aktuellen SiP-Daten enthält und für Realtime freigeschaltet ist.
+ * (Kann bei Bedarf über diesen Bezeichner zentral auf z.B. 'sip_items' geändert werden).
+ */
+export const SIP_DATABASE_TABLE = 'keller_items';
 
 /**
- * Universelle Abfrage für SiP-Datensätze:
- * Versucht zuerst die dedizierte Tabelle 'sip_items'. Falls diese in Supabase noch nicht existiert,
- * wird transparent auf 'keller_items' zurückgegriffen.
+ * Universelle Abfrage für SiP-Datensätze aus der einheitlichen Tabelle.
  */
 export async function querySipRow(
   client: SupabaseClient,
@@ -58,34 +61,19 @@ export async function querySipRow(
 ): Promise<{ data: any | null; error: any | null; tableUsed: string }> {
   try {
     const { data, error } = await client
-      .from(PRIMARY_SIP_TABLE)
+      .from(SIP_DATABASE_TABLE)
       .select('*')
       .eq('id', rowId)
       .maybeSingle();
 
-    if (!error && data) {
-      return { data, error: null, tableUsed: PRIMARY_SIP_TABLE };
-    }
-  } catch {}
-
-  // Fallback auf keller_items
-  try {
-    const { data: fallbackData, error: fallbackError } = await client
-      .from(FALLBACK_SIP_TABLE)
-      .select('*')
-      .eq('id', rowId)
-      .maybeSingle();
-
-    return { data: fallbackData, error: fallbackError, tableUsed: FALLBACK_SIP_TABLE };
+    return { data, error, tableUsed: SIP_DATABASE_TABLE };
   } catch (err) {
-    return { data: null, error: err, tableUsed: FALLBACK_SIP_TABLE };
+    return { data: null, error: err, tableUsed: SIP_DATABASE_TABLE };
   }
 }
 
 /**
- * Universelles Upsert für SiP-Datensätze:
- * Schreibt primär in 'sip_items'. Falls die Tabelle in Supabase noch nicht existiert,
- * erfolgt ein automatischer Fallback in 'keller_items'.
+ * Universelles Upsert für SiP-Datensätze in die einheitliche Tabelle.
  */
 export async function upsertSipRow(
   client: SupabaseClient,
@@ -107,18 +95,10 @@ export async function upsertSipRow(
   };
 
   try {
-    const { error } = await client.from(PRIMARY_SIP_TABLE).upsert(record);
-    if (!error) {
-      return { success: true, tableUsed: PRIMARY_SIP_TABLE };
-    }
-  } catch {}
-
-  // Fallback auf keller_items
-  try {
-    const { error: fallbackError } = await client.from(FALLBACK_SIP_TABLE).upsert(record);
-    return { success: !fallbackError, error: fallbackError, tableUsed: FALLBACK_SIP_TABLE };
+    const { error } = await client.from(SIP_DATABASE_TABLE).upsert(record);
+    return { success: !error, error, tableUsed: SIP_DATABASE_TABLE };
   } catch (err) {
-    return { success: false, error: err, tableUsed: FALLBACK_SIP_TABLE };
+    return { success: false, error: err, tableUsed: SIP_DATABASE_TABLE };
   }
 }
 

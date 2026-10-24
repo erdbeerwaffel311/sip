@@ -9,13 +9,14 @@ import {
   SipActivityLogEntry,
 } from './types';
 import { AppSettings } from '../types';
-import { getSupabaseClient, querySipRow, upsertSipRow } from '../utils/supabaseSync';
+import { getSupabaseClient, SIP_DATABASE_TABLE } from '../utils/supabaseSync';
 import { archiveCurrentSession } from './utils/archiveService';
 
 export const SIP_STORAGE_KEY = 'sip_current_session_v1';
 export const SIP_NOTIFICATION_STORAGE_KEY = 'sip_recent_notifications_v1';
 export const SIP_REALTIME_CHANNEL_NAME = 'sip_parlament_live';
 export const SIP_DB_ROW_ID = '__sip_session_current__';
+export { SIP_DATABASE_TABLE };
 
 export type SipRealtimeMessage =
   | { type: 'STATE_SYNC'; session: SipSession }
@@ -139,9 +140,10 @@ class SipRealtimeService {
     };
   }
 
-  private applyCloudSession(cloudSession: SipSession) {
+  private applyCloudSession(cloudSession: SipSession, forceOverwrite = false) {
     if (!cloudSession) return;
     if (
+      !forceOverwrite &&
       this.hasLoadedCloudSession &&
       cloudSession.updatedAt &&
       this.currentSession.updatedAt &&
@@ -179,7 +181,7 @@ class SipRealtimeService {
   public init(settings: AppSettings) {
     this.cachedSettings = settings;
 
-    // Lade gespeicherte Session aus LocalStorage
+    // 1. Lade zwischengespeicherte Session aus LocalStorage (falls vorhanden)
     try {
       const saved = localStorage.getItem(SIP_STORAGE_KEY);
       if (saved) {
@@ -190,13 +192,14 @@ class SipRealtimeService {
       this.currentSession = DEFAULT_SIP_SESSION;
     }
 
-    // Verbinde mit Supabase Realtime
+    // 2. Verbinde mit Supabase Realtime
     this.setupSupabase(settings);
 
-    // Versuche neuesten Stand sofort aus Supabase abzurufen
-    this.fetchFromSupabase(settings).catch(() => {});
+    // 3. Sofortiger Abruf aus Supabase: supabase.from(SIP_DATABASE_TABLE).select('*')
+    // Holt den Eintrag __sip_session_current__ sofort ab und überschreibt den lokalen Zustand
+    this.fetchFromSupabase(settings, true).catch(() => {});
 
-    // Schneller Sync-Takt alle 2 Sekunden zur garantierten Ausfallsicherheit
+    // 4. Schneller Sync-Takt alle 2 Sekunden zur garantierten Ausfallsicherheit
     if (!this.syncInterval) {
       this.syncInterval = setInterval(() => {
         this.fetchFromSupabase(this.cachedSettings || settings).catch(() => {});
@@ -228,34 +231,20 @@ class SipRealtimeService {
           {
             event: '*',
             schema: 'public',
-            table: 'sip_items',
+            table: SIP_DATABASE_TABLE,
             filter: `id=eq.${SIP_DB_ROW_ID}`,
           },
           (payload) => {
             if (payload && payload.new && (payload.new as any).payload) {
               const cloudSession = (payload.new as any).payload as SipSession;
-              this.applyCloudSession(cloudSession);
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'keller_items',
-            filter: `id=eq.${SIP_DB_ROW_ID}`,
-          },
-          (payload) => {
-            if (payload && payload.new && (payload.new as any).payload) {
-              const cloudSession = (payload.new as any).payload as SipSession;
-              this.applyCloudSession(cloudSession);
+              // Bei jedem UPDATE aus Supabase: Lokalen Zustand direkt mit payload überschreiben!
+              this.applyCloudSession(cloudSession, true);
             }
           }
         )
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            console.log('[SiP Realtime] Connected to live channel');
+            console.log('[SiP Realtime] Connected to live channel on table:', SIP_DATABASE_TABLE);
           }
         });
     } catch (err) {
@@ -1003,35 +992,34 @@ class SipRealtimeService {
 
   // --- SUPABASE PERSISTENCE ---
 
-  private async fetchFromSupabase(settings?: AppSettings) {
-    // Guard: Wenn vor weniger als 3.5 Sekunden eine lokale Aktion durchgeführt wurde,
-    // überspringe den Polling-Fetch, um In-Flight-Race-Conditions zu verhindern
-    if (Date.now() - this.lastLocalMutationAt < 3500) {
-      return;
+  public async fetchFromSupabase(settings?: AppSettings, force = false): Promise<SipSession | null> {
+    // Guard: Wenn vor weniger als 2 Sekunden eine lokale Aktion durchgeführt wurde,
+    // überspringe den Polling-Fetch (außer bei force=true z. B. beim Start der App)
+    if (!force && Date.now() - this.lastLocalMutationAt < 2000) {
+      return null;
     }
 
     const client = getSupabaseClient(settings || this.cachedSettings || undefined);
-    if (!client) return;
+    if (!client) return null;
 
     try {
-      // Abfrage über sip_items mit transparentem Fallback auf keller_items
-      const { data, error } = await querySipRow(client, SIP_DB_ROW_ID);
+      // Direkter SELECT auf die konfigurierte SiP-Tabelle (__sip_session_current__)
+      const { data, error } = await client
+        .from(SIP_DATABASE_TABLE)
+        .select('*')
+        .eq('id', SIP_DB_ROW_ID)
+        .maybeSingle();
 
       if (!error && data && data.payload) {
         const cloudSession = data.payload as SipSession;
-        if (
-          this.hasLoadedCloudSession &&
-          cloudSession.updatedAt &&
-          this.currentSession.updatedAt &&
-          cloudSession.updatedAt < this.currentSession.updatedAt
-        ) {
-          return;
-        }
-        this.applyCloudSession(cloudSession);
+        // Beim Start oder erzwungenem Abruf wird der lokale Zustand direkt mit payload aktualisiert
+        this.applyCloudSession(cloudSession, force);
+        return cloudSession;
       }
     } catch (err) {
       console.warn('Could not fetch SiP session from Supabase:', err);
     }
+    return null;
   }
 
   public async syncSessionToSupabase(settings?: AppSettings, session?: SipSession) {
@@ -1040,11 +1028,12 @@ class SipRealtimeService {
 
     const sess = this.toCompactSession(session || this.currentSession);
     try {
-      const { error } = await upsertSipRow(client, {
+      const { error } = await client.from(SIP_DATABASE_TABLE).upsert({
         id: SIP_DB_ROW_ID,
         name: `SiP Session: ${sess.title}`,
         category: '__sip_system__',
         quantity: 1,
+        updated_at: new Date().toISOString(),
         payload: sess,
       });
 

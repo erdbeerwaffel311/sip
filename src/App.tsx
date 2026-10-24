@@ -16,6 +16,7 @@ import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
 import { getSupabaseClient, verifyAdmin2FACode } from './utils/supabaseSync';
+import { verifyTotpCode } from './utils/totp';
 
 const STORAGE_KEYS = {
   SETTINGS: 'sip_standalone_settings_v3',
@@ -37,6 +38,8 @@ export const App: React.FC = () => {
           ...parsed,
           adminPassword: parsed.adminPassword || 'admin2026!',
           strategiePassword: parsed.strategiePassword || 'strategie2026',
+          totpSecret: parsed.totpSecret || '',
+          totpEnabled: parsed.totpEnabled ?? false,
         };
       }
     } catch {}
@@ -144,6 +147,8 @@ export const App: React.FC = () => {
             adminPassword: data.payload.adminPassword || prev.adminPassword,
             strategiePassword: data.payload.strategiePassword || prev.strategiePassword,
             adminEmail: data.payload.adminEmail ?? prev.adminEmail,
+            totpSecret: data.payload.totpSecret ?? prev.totpSecret,
+            totpEnabled: data.payload.totpEnabled ?? prev.totpEnabled,
           }));
         }
       } catch {}
@@ -179,6 +184,8 @@ export const App: React.FC = () => {
             adminPassword: newSettings.adminPassword,
             strategiePassword: newSettings.strategiePassword,
             adminEmail: newSettings.adminEmail,
+            totpSecret: newSettings.totpSecret,
+            totpEnabled: newSettings.totpEnabled,
           },
         });
       } catch {}
@@ -198,18 +205,31 @@ export const App: React.FC = () => {
     localStorage.removeItem(STORAGE_KEYS.ADMIN_UNLOCKED);
   }
 
-  function handleAdminButtonClick() {
+  async function handleAdminButtonClick() {
     if (isAdminUnlocked) {
       setCurrentView(currentView === 'admin' ? 'parliament' : 'admin');
     } else {
       const pass = prompt('Bitte Administrator-Passwort eingeben:');
-      if (pass !== null && pass === settings.adminPassword) {
-        setIsAdminUnlocked(true);
-        localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-        setCurrentView('admin');
-      } else if (pass !== null) {
+      if (pass === null) return;
+      if (pass !== settings.adminPassword) {
         alert('ungültiges Passwort, bitte versuche es erneut!');
+        return;
       }
+
+      // Falls Authenticator-App (TOTP) aktiviert ist, frage nach dem 6-stelligen Code:
+      if (settings.totpEnabled && settings.totpSecret) {
+        const code = prompt('Bitte 6-stelligen Code aus der Authenticator-App eingeben:');
+        if (code === null) return;
+        const valid = await verifyTotpCode(settings.totpSecret, code);
+        if (!valid) {
+          alert('ungültiges Passwort, bitte versuche es erneut!');
+          return;
+        }
+      }
+
+      setIsAdminUnlocked(true);
+      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
+      setCurrentView('admin');
     }
   }
 

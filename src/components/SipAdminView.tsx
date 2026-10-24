@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import QRCode from 'qrcode';
 import {
   Users,
   UserPlus,
@@ -20,6 +21,9 @@ import {
   Send,
   AlertCircle,
   X,
+  QrCode,
+  Smartphone,
+  KeyRound,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -28,6 +32,12 @@ import {
   MemberAccount,
 } from '../types';
 import { sendAdmin2FAEmail, verifyAdmin2FACode } from '../utils/supabaseSync';
+import {
+  generateTotpSecret,
+  getTotpUri,
+  verifyTotpCode,
+  formatSecretForDisplay,
+} from '../utils/totp';
 
 interface SipAdminViewProps {
   settings: AppSettings;
@@ -63,7 +73,15 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
   const [supabaseKeyInput, setSupabaseKeyInput] = useState(settings.supabaseAnonKey);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
-  // 2FA Protected Area State (wie im Inventurprogramm)
+  // TOTP Authenticator-App State
+  const [showTotpSetupModal, setShowTotpSetupModal] = useState(false);
+  const [totpDraftSecret, setTotpDraftSecret] = useState(settings.totpSecret || '');
+  const [totpQrDataUrl, setTotpQrDataUrl] = useState<string | null>(null);
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [totpError, setTotpError] = useState<string | null>(null);
+  const [copiedTotpSecret, setCopiedTotpSecret] = useState(false);
+
+  // 2FA Protected Area State
   const [twoFactorStage, setTwoFactorStage] = useState<'idle' | 'code_sent' | 'verified'>(
     initial2FAVerified ? 'verified' : 'idle'
   );
@@ -83,7 +101,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
     }, 4500);
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (initial2FAVerified) {
       setActiveTab('settings');
       setTwoFactorStage('verified');
@@ -91,6 +109,67 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       showBanner('2FA erfolgreich bestätigt! Du kannst die Passwörter und die 2FA-E-Mail jetzt ändern.');
     }
   }, [initial2FAVerified, settings.adminEmail]);
+
+  // TOTP QR-Code Vorbereitung
+  async function prepareTotpQr(secretToUse?: string) {
+    const sec = secretToUse || settings.totpSecret || generateTotpSecret();
+    setTotpDraftSecret(sec);
+    setTotpError(null);
+    setTotpVerifyCode('');
+    try {
+      const uri = getTotpUri(sec, 'Admin', 'SiP-Parlament');
+      const url = await QRCode.toDataURL(uri, {
+        width: 240,
+        margin: 1,
+        color: { dark: '#0284c7', light: '#ffffff' },
+      });
+      setTotpQrDataUrl(url);
+      setShowTotpSetupModal(true);
+    } catch (e) {
+      console.error('Fehler beim Generieren des QR-Codes:', e);
+    }
+  }
+
+  async function handleConfirmTotpActivation(e: React.FormEvent) {
+    e.preventDefault();
+    setTotpError(null);
+    const clean = totpVerifyCode.trim();
+    const valid = await verifyTotpCode(totpDraftSecret, clean);
+    if (!valid) {
+      setTotpError('ungültiges Passwort, bitte versuche es erneut!');
+      return;
+    }
+
+    onUpdateSettings({
+      ...settings,
+      totpSecret: totpDraftSecret,
+      totpEnabled: true,
+    });
+    setShowTotpSetupModal(false);
+    setTotpVerifyCode('');
+    showBanner('Authenticator-App 2FA erfolgreich aktiviert! Alle registrierten Handys sind jetzt gültig.');
+  }
+
+  async function handleVerifyTotpForPasswordChange(e: React.FormEvent) {
+    e.preventDefault();
+    if (!settings.totpSecret) return;
+    const clean = totpVerifyCode.trim();
+    const valid = await verifyTotpCode(settings.totpSecret, clean);
+    if (!valid) {
+      setTwoFactorError('ungültiges Passwort, bitte versuche es erneut!');
+      return;
+    }
+    setTwoFactorStage('verified');
+    setTotpVerifyCode('');
+    setTwoFactorError(null);
+    showBanner('2FA erfolgreich bestätigt! Du kannst die Passwörter jetzt ändern.');
+  }
+
+  function handleResetTotpSecret() {
+    if (!confirm('Möchtest du wirklich einen neuen 2FA-Schlüssel generieren? Alle bisherigen Handys müssen den neuen QR-Code erneut scannen.')) return;
+    const newSec = generateTotpSecret();
+    prepareTotpQr(newSec);
+  }
 
   // Filtered accounts
   const filteredAccounts = useMemo(() => {
@@ -159,7 +238,6 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       memberAccounts: updatedAccounts,
     });
 
-    // Reset Form
     setNewName('');
     setNewUsername('');
     setNewPassword(generateRandomMemberPassword());
@@ -622,199 +700,260 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       {/* Tab 2: Passwörter, 2FA-Schutz & Cloud-Datenbank */}
       {activeTab === 'settings' && (
         <div className="space-y-6 max-w-2xl">
-          {/* 2FA-Geschützter Bereich: Admin & Strategie Passwörter */}
+          {/* 1. HAUPTMETHODE: Authenticator-App (TOTP) mit QR-Code */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-slate-800">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Lock className="w-5 h-5" />
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <span>Authenticator-App (6-stelliger Code)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/20 text-sky-300 border border-sky-500/40">
+                      Empfohlen
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Google Authenticator, Apple Passwörter, Microsoft Authenticator & 1Password
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-base">Passwörter & 2FA-Zwei-Faktor-Authentifizierung</h3>
-                <p className="text-xs text-slate-400">
-                  Schütze das Admin-Passwort und das Strategieführungs-Passwort durch deine E-Mail-Adresse
-                </p>
-              </div>
+
+              {settings.totpEnabled ? (
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>2FA Aktiv</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                  Nicht eingerichtet
+                </span>
+              )}
             </div>
 
-            {twoFactorError && (
-              <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{twoFactorError}</span>
-              </div>
-            )}
+            {/* TOTP Erklärung & Nutzen */}
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Generiert alle 30 Sekunden einen neuen 6-stelligen Code auf deinem Smartphone.
+              <strong> Der QR-Code kann von beliebig vielen Personen / Handys gleichzeitig gescannt werden</strong> und funktioniert auch komplett offline ohne E-Mail.
+            </p>
 
-            {/* Fall A: Noch keine 2FA-E-Mail hinterlegt */}
-            {!settings.adminEmail ? (
-              <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Hinterlege hier einmalig deine <strong>Admin-E-Mail-Adresse für die 2-Faktor-Authentifizierung (2FA)</strong>.
-                  Sobald sie gespeichert ist, können das Admin-Passwort und das Strategieführungs-Passwort nur noch nach
-                  Bestätigung über einen per E-Mail gesendeten Code/Link geändert werden.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="relative flex-1">
-                    <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-                    <input
-                      type="email"
-                      value={initial2FAEmailInput}
-                      onChange={(e) => setInitial2FAEmailInput(e.target.value)}
-                      placeholder="admin@schuelerunion.at"
-                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-sky-500"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveInitial2FAEmail}
-                    className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition cursor-pointer"
-                  >
-                    2FA-E-Mail aktivieren
-                  </button>
-                </div>
+            {/* Zustand A: TOTP noch nicht aktiviert */}
+            {!settings.totpEnabled ? (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => prepareTotpQr()}
+                  className="py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer transition w-full"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>QR-Code generieren & Authenticator-App einrichten</span>
+                </button>
               </div>
             ) : (
-              /* Fall B: 2FA aktiv */
-              <div className="space-y-4">
-                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Hinterlegte 2FA-E-Mail-Adresse:</span>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold text-[11px]">
-                      2FA aktiv
+              /* Zustand B: TOTP ist aktiv */
+              <div className="space-y-4 pt-1">
+                <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 block mb-0.5">2FA-Schutzstatus:</span>
+                    <span className="font-semibold text-emerald-300 flex items-center gap-1">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      Admin-Bereich ist durch deine Authenticator-App geschützt
                     </span>
                   </div>
-                  <p className="font-mono text-sm text-white font-bold">{settings.adminEmail}</p>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => prepareTotpQr(settings.totpSecret)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      title="Zeigt den QR-Code, damit weitere Teammitglieder oder Nachfolger ihn scannen können"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>QR-Code für weitere Personen</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetTotpSecret}
+                      className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-800 text-xs cursor-pointer"
+                      title="Neuen 2FA-Schlüssel generieren (alte Handys verlieren Zugriff)"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Stufe 1: Idle (Code anfordern) */}
+                {/* Formular zum Entsperren der Passwortänderung per 6-stelligem TOTP-Code */}
+                {twoFactorStage !== 'verified' && (
+                  <form
+                    onSubmit={handleVerifyTotpForPasswordChange}
+                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3"
+                  >
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Passwörter ändern: Gib den aktuellen 6-stelligen Code aus deiner Authenticator-App ein
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        value={totpVerifyCode}
+                        onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="z. B. 123456"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono text-center tracking-widest text-base font-bold focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs cursor-pointer transition shadow-md"
+                      >
+                        Code prüfen & Passwörter freigeben
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Formular zum Ändern der Passwörter (wird nach 2FA-Prüfung freigeschaltet) */}
+          {twoFactorStage === 'verified' && (
+            <form
+              onSubmit={handleSave2FAProtectedChanges}
+              className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4 animate-in fade-in"
+            >
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>2FA erfolgreich bestätigt! Du kannst jetzt das Administrator- und Strategieführungs-Passwort ändern:</span>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-xs">
+                  Neues Administrator-Passwort (für den Einstieg in dieses Admin-Menü)
+                </label>
+                <input
+                  type="text"
+                  value={twoFactorNewAdminPassword}
+                  onChange={(e) => setTwoFactorNewAdminPassword(e.target.value)}
+                  placeholder={settings.adminPassword}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-xs">
+                  Neues Strategieführungs-Passwort (für manuelle Plenums-Freischaltung)
+                </label>
+                <input
+                  type="text"
+                  value={twoFactorNewStrategiePassword}
+                  onChange={(e) => setTwoFactorNewStrategiePassword(e.target.value)}
+                  placeholder={settings.strategiePassword || 'strategie2026'}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1 text-xs">
+                  Optionale Backup-E-Mail
+                </label>
+                <input
+                  type="email"
+                  value={twoFactorNewEmail}
+                  onChange={(e) => setTwoFactorNewEmail(e.target.value)}
+                  placeholder={settings.adminEmail || 'admin@schuelerunion.at'}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer transition shadow-lg shadow-emerald-500/20"
+                >
+                  Passwörter sicher speichern
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTwoFactorStage('idle');
+                    setTwoFactorNewAdminPassword('');
+                    setTwoFactorNewStrategiePassword('');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* 2. ALTERNATIVE: E-Mail-2FA (Backup) */}
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 sm:p-6 text-white space-y-3">
+            <div className="flex items-center gap-2.5">
+              <Mail className="w-4 h-4 text-slate-400" />
+              <h4 className="text-sm font-bold text-slate-300">E-Mail 2FA (Alternatives Backup)</h4>
+            </div>
+
+            {settings.adminEmail ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Hinterlegte Backup-E-Mail:</span>
+                  <span className="font-mono text-white font-bold">{settings.adminEmail}</span>
+                </div>
                 {twoFactorStage === 'idle' && (
                   <button
                     type="button"
                     onClick={handleRequest2FACode}
                     disabled={twoFactorLoading}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer transition"
+                    className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold cursor-pointer text-xs"
                   >
-                    <Send className="w-4 h-4" />
-                    <span>
-                      {twoFactorLoading ? 'Sende 2FA-E-Mail...' : 'Passwörter / 2FA-E-Mail ändern (E-Mail senden)'}
-                    </span>
+                    {twoFactorLoading ? 'Sende...' : 'Per E-Mail bestätigen'}
                   </button>
                 )}
-
-                {/* Stufe 2: Code gesendet -> Eingabe */}
-                {twoFactorStage === 'code_sent' && (
-                  <form onSubmit={handleVerify2FACode} className="space-y-3 pt-2 border-t border-slate-800">
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      Wir haben eine 2FA-E-Mail an <strong>{settings.adminEmail}</strong> gesendet.
-                      Trage einfach den <strong>6-stelligen Bestätigungscode</strong> aus der E-Mail hier ein (du musst nicht auf den Link klicken):
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        required
-                        value={twoFactorCodeInput}
-                        onChange={(e) => setTwoFactorCodeInput(e.target.value)}
-                        placeholder="6-stelliger Code oder Link"
-                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-amber-500"
-                      />
-                      <button
-                        type="submit"
-                        disabled={twoFactorLoading || !twoFactorCodeInput.trim()}
-                        className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer transition disabled:opacity-50"
-                      >
-                        {twoFactorLoading ? 'Prüfe...' : '2FA bestätigen'}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={handleRequest2FACode}
-                        disabled={twoFactorLoading}
-                        className="text-slate-400 hover:text-white underline cursor-pointer"
-                      >
-                        E-Mail erneut senden
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTwoFactorStage('idle');
-                          setTwoFactorError(null);
-                        }}
-                        className="text-slate-400 hover:text-white cursor-pointer"
-                      >
-                        Abbrechen
-                      </button>
-                    </div>
-                  </form>
-                )}
-
-                {/* Stufe 3: 2FA Verifiziert -> Passwörter & E-Mail änderbar */}
-                {twoFactorStage === 'verified' && (
-                  <form onSubmit={handleSave2FAProtectedChanges} className="space-y-4 pt-2 border-t border-slate-800">
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-                      ✓ 2FA erfolgreich bestätigt! Du kannst jetzt das Admin-Passwort, das Strategieführungs-Passwort und die 2FA-E-Mail ändern:
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                        Neues Administrator-Passwort (separater Systemzugang)
-                      </label>
-                      <input
-                        type="text"
-                        value={twoFactorNewAdminPassword}
-                        onChange={(e) => setTwoFactorNewAdminPassword(e.target.value)}
-                        placeholder={settings.adminPassword}
-                        className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                        Neues Strategieführungs-Passwort (für manuelle Plenumsfreischaltung)
-                      </label>
-                      <input
-                        type="text"
-                        value={twoFactorNewStrategiePassword}
-                        onChange={(e) => setTwoFactorNewStrategiePassword(e.target.value)}
-                        placeholder={settings.strategiePassword || 'strategie2026'}
-                        className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-amber-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                        2FA-E-Mail-Adresse (änderbar)
-                      </label>
-                      <input
-                        type="email"
-                        value={twoFactorNewEmail}
-                        onChange={(e) => setTwoFactorNewEmail(e.target.value)}
-                        placeholder={settings.adminEmail}
-                        className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:border-sky-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2">
-                      <button
-                        type="submit"
-                        className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer transition shadow-lg shadow-emerald-500/20"
-                      >
-                        Passwörter & 2FA-E-Mail speichern
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTwoFactorStage('idle');
-                          setTwoFactorNewAdminPassword('');
-                          setTwoFactorNewStrategiePassword('');
-                        }}
-                        className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs cursor-pointer"
-                      >
-                        Abbrechen
-                      </button>
-                    </div>
-                  </form>
-                )}
               </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={initial2FAEmailInput}
+                  onChange={(e) => setInitial2FAEmailInput(e.target.value)}
+                  placeholder="admin@schuelerunion.at"
+                  className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveInitial2FAEmail}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                >
+                  Speichern
+                </button>
+              </div>
+            )}
+
+            {/* Code sent via Email */}
+            {twoFactorStage === 'code_sent' && (
+              <form onSubmit={handleVerify2FACode} className="space-y-2 pt-2 border-t border-slate-800">
+                <p className="text-xs text-slate-300">
+                  E-Mail gesendet! Füge den Link oder Code hier ein:
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={twoFactorCodeInput}
+                    onChange={(e) => setTwoFactorCodeInput(e.target.value)}
+                    placeholder="Link oder Code einfügen"
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-mono"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
+                  >
+                    Bestätigen
+                  </button>
+                </div>
+              </form>
             )}
           </div>
 
@@ -861,6 +1000,120 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
               Datenbank-Verbindung speichern
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Modal: TOTP QR-Code Setup / Anzeigen */}
+      {showTotpSetupModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl max-w-md w-full text-white space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                  <Smartphone className="w-4 h-4" />
+                </div>
+                <h2 className="text-base font-black">
+                  Authenticator-App einrichten
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTotpSetupModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>
+                <strong>1. App öffnen:</strong> Öffne Google Authenticator, Apple Passwörter oder Microsoft Authenticator auf deinem Smartphone.
+              </p>
+              <p>
+                <strong>2. QR-Code scannen:</strong> Scanne diesen Code mit der App ab (kann von mehreren Personen / Handys abgescannt werden):
+              </p>
+            </div>
+
+            {/* QR-Code Bild */}
+            <div className="flex justify-center py-2">
+              {totpQrDataUrl ? (
+                <div className="p-3 bg-white rounded-2xl shadow-xl border border-slate-700">
+                  <img
+                    src={totpQrDataUrl}
+                    alt="2FA QR Code"
+                    className="w-48 h-48 block"
+                  />
+                </div>
+              ) : (
+                <div className="w-48 h-48 flex items-center justify-center bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-500">
+                  Generiere QR-Code...
+                </div>
+              )}
+            </div>
+
+            {/* Manuelle Eingabe (Secret Key) */}
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Manueller Einrichtungsschlüssel (Secret):</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(totpDraftSecret);
+                    setCopiedTotpSecret(true);
+                    setTimeout(() => setCopiedTotpSecret(false), 2500);
+                  }}
+                  className="text-sky-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedTotpSecret ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400">Kopiert!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Kopieren</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="font-mono text-xs font-bold text-sky-300 tracking-wider break-all select-all">
+                {formatSecretForDisplay(totpDraftSecret)}
+              </p>
+            </div>
+
+            {/* Schritt 3: Aktivierungscode eingeben */}
+            <form onSubmit={handleConfirmTotpActivation} className="space-y-3 pt-2 border-t border-slate-800">
+              <label className="block text-xs font-semibold text-slate-300">
+                3. Bestätigen: Gib den 6-stelligen Code aus deiner App ein
+              </label>
+
+              {totpError && (
+                <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{totpError}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={totpVerifyCode}
+                  onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-center tracking-widest text-lg font-bold focus:outline-none focus:border-sky-500"
+                />
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs cursor-pointer transition shadow-md"
+                >
+                  2FA aktivieren
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

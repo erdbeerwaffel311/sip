@@ -15,6 +15,8 @@ export interface AppSettings {
   adminPassword: string;
   strategiePassword: string;
   adminEmail?: string;
+  totpSecret?: string;
+  totpEnabled?: boolean;
   allowedMembers: string[];
   memberAccounts: MemberAccount[];
   supabaseUrl: string;
@@ -140,6 +142,8 @@ export const DEFAULT_SIP_SETTINGS: AppSettings = {
   adminPassword: 'admin2026!',
   strategiePassword: 'strategie2026',
   adminEmail: '',
+  totpSecret: '',
+  totpEnabled: false,
   allowedMembers: DEFAULT_ALLOWED_MEMBERS,
   memberAccounts: DEFAULT_ALLOWED_MEMBERS.map((name) => ({
     name,

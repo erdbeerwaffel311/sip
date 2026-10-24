@@ -9,7 +9,7 @@ import {
   SipActivityLogEntry,
 } from './types';
 import { AppSettings } from '../types';
-import { getSupabaseClient } from '../utils/supabaseSync';
+import { getSupabaseClient, querySipRow, upsertSipRow } from '../utils/supabaseSync';
 import { archiveCurrentSession } from './utils/archiveService';
 
 export const SIP_STORAGE_KEY = 'sip_current_session_v1';
@@ -223,6 +223,21 @@ class SipRealtimeService {
             this.handleIncomingMessage(payload.payload as SipRealtimeMessage);
           }
         })
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'sip_items',
+            filter: `id=eq.${SIP_DB_ROW_ID}`,
+          },
+          (payload) => {
+            if (payload && payload.new && (payload.new as any).payload) {
+              const cloudSession = (payload.new as any).payload as SipSession;
+              this.applyCloudSession(cloudSession);
+            }
+          }
+        )
         .on(
           'postgres_changes',
           {
@@ -999,12 +1014,8 @@ class SipRealtimeService {
     if (!client) return;
 
     try {
-      // Wir nutzen keller_items als universelle persistente Tabelle, falls vorhanden
-      const { data, error } = await client
-        .from('keller_items')
-        .select('*')
-        .eq('id', SIP_DB_ROW_ID)
-        .maybeSingle();
+      // Abfrage über sip_items mit transparentem Fallback auf keller_items
+      const { data, error } = await querySipRow(client, SIP_DB_ROW_ID);
 
       if (!error && data && data.payload) {
         const cloudSession = data.payload as SipSession;
@@ -1029,12 +1040,11 @@ class SipRealtimeService {
 
     const sess = this.toCompactSession(session || this.currentSession);
     try {
-      const { error } = await client.from('keller_items').upsert({
+      const { error } = await upsertSipRow(client, {
         id: SIP_DB_ROW_ID,
         name: `SiP Session: ${sess.title}`,
         category: '__sip_system__',
         quantity: 1,
-        updated_at: new Date().toISOString(),
         payload: sess,
       });
 

@@ -24,6 +24,7 @@ import {
   QrCode,
   Smartphone,
   KeyRound,
+  Database,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -38,6 +39,34 @@ import {
   verifyTotpCode,
   formatSecretForDisplay,
 } from '../utils/totp';
+
+export const SIP_MIGRATION_SQL = `-- 1. Neue dedizierte SiP-Tabelle erstellen
+CREATE TABLE IF NOT EXISTS public.sip_items (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    category TEXT,
+    quantity NUMERIC DEFAULT 1,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    payload JSONB
+);
+
+-- 2. Bestehende SiP-Daten aus keller_items übertragen
+INSERT INTO public.sip_items (id, name, category, quantity, updated_at, payload)
+SELECT id, name, category, quantity, updated_at, payload
+FROM public.keller_items
+WHERE id LIKE '__sip_%'
+ON CONFLICT (id) DO UPDATE 
+SET name = EXCLUDED.name,
+    category = EXCLUDED.category,
+    quantity = EXCLUDED.quantity,
+    updated_at = EXCLUDED.updated_at,
+    payload = EXCLUDED.payload;
+
+-- 3. RLS & Realtime für sip_items aktivieren
+ALTER TABLE public.sip_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public all access on sip_items" ON public.sip_items;
+CREATE POLICY "Allow public all access on sip_items" ON public.sip_items FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE public.sip_items;`;
 
 interface SipAdminViewProps {
   settings: AppSettings;
@@ -72,6 +101,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
   const [supabaseUrlInput, setSupabaseUrlInput] = useState(settings.supabaseUrl);
   const [supabaseKeyInput, setSupabaseKeyInput] = useState(settings.supabaseAnonKey);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // TOTP Authenticator-App State
   const [showTotpSetupModal, setShowTotpSetupModal] = useState(false);
@@ -1000,6 +1030,65 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
               Datenbank-Verbindung speichern
             </button>
           </form>
+
+          {/* Supabase Tabellen-Migration (sip_items vs. keller_items) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4 text-xs sm:text-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base">Datenbank-Tabellen & Migration</h3>
+                <p className="text-xs text-slate-400">
+                  Übergang von <code className="text-amber-300">keller_items</code> zur sauberen SiP-Tabelle <code className="text-sky-300">sip_items</code>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-300 leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <p>
+                <strong>Hintergrund:</strong> Die Tabellennamen <code className="text-slate-400">keller_items</code> und <code className="text-slate-400">keller_transactions</code> stammen aus der ursprünglichen Vereinskeller-App, die denselben Supabase-Account genutzt hat.
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 pt-1">
+                <li><strong className="text-rose-300">keller_transactions:</strong> Wird im SiP-Parlament zu <strong>100% nicht verwendet</strong> und kann ignoriert oder in Supabase gelöscht werden.</li>
+                <li><strong className="text-sky-300">sip_items:</strong> Die neue dedizierte Tabelle für SiP. Der Programmcode fragt primär <code className="text-sky-300">sip_items</code> ab.</li>
+                <li><strong className="text-emerald-300">Automatischer Fallback aktiv:</strong> Solange <code className="text-sky-300">sip_items</code> noch nicht existiert, greift das Programm automatisch auf <code className="text-amber-300">keller_items</code> zurück. Es bricht also niemals etwas ab!</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-slate-200 text-xs">
+                  1-Klick SQL-Skript (in Supabase Dashboard &gt; SQL Editor ausführen):
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(SIP_MIGRATION_SQL);
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 3000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  {copiedSql ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-300">SQL kopiert!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>SQL kopieren</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed max-h-48">
+                {SIP_MIGRATION_SQL}
+              </pre>
+            </div>
+          </div>
         </div>
       )}
 

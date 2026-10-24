@@ -1,6 +1,6 @@
 import { SipArchivedSession, SipSession } from '../types';
 import { AppSettings } from '../../types';
-import { getSupabaseClient } from '../../utils/supabaseSync';
+import { getSupabaseClient, querySipRow, upsertSipRow } from '../../utils/supabaseSync';
 
 export const SIP_ARCHIVE_ROW_ID = '__sip_archives__';
 export const SIP_ARCHIVE_STORAGE_KEY = 'sip_archived_sessions_v1';
@@ -12,11 +12,7 @@ export async function fetchArchivedSessions(settings?: AppSettings): Promise<Sip
   const client = getSupabaseClient(settings);
   if (client) {
     try {
-      const { data, error } = await client
-        .from('keller_items')
-        .select('*')
-        .eq('id', SIP_ARCHIVE_ROW_ID)
-        .maybeSingle();
+      const { data, error } = await querySipRow(client, SIP_ARCHIVE_ROW_ID);
 
       if (!error && data && data.payload && Array.isArray(data.payload.archives)) {
         const archives = data.payload.archives as SipArchivedSession[];
@@ -72,12 +68,11 @@ export async function archiveCurrentSession(
   const client = getSupabaseClient(settings);
   if (client) {
     try {
-      await client.from('keller_items').upsert({
+      await upsertSipRow(client, {
         id: SIP_ARCHIVE_ROW_ID,
         name: 'SiP Archivierte Sitzungen',
         category: '__sip_system__',
         quantity: updatedArchives.length,
-        updated_at: new Date().toISOString(),
         payload: {
           archives: updatedArchives,
         },
@@ -109,12 +104,11 @@ export async function deleteArchivedSession(
   const client = getSupabaseClient(settings);
   if (client) {
     try {
-      await client.from('keller_items').upsert({
+      await upsertSipRow(client, {
         id: SIP_ARCHIVE_ROW_ID,
         name: 'SiP Archivierte Sitzungen',
         category: '__sip_system__',
         quantity: updatedArchives.length,
-        updated_at: new Date().toISOString(),
         payload: {
           archives: updatedArchives,
         },

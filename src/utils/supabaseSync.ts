@@ -44,6 +44,84 @@ export function getSupabaseClient(settings?: Partial<AppSettings> | null): Supab
   }
 }
 
+export const PRIMARY_SIP_TABLE = 'sip_items';
+export const FALLBACK_SIP_TABLE = 'keller_items';
+
+/**
+ * Universelle Abfrage für SiP-Datensätze:
+ * Versucht zuerst die dedizierte Tabelle 'sip_items'. Falls diese in Supabase noch nicht existiert,
+ * wird transparent auf 'keller_items' zurückgegriffen.
+ */
+export async function querySipRow(
+  client: SupabaseClient,
+  rowId: string
+): Promise<{ data: any | null; error: any | null; tableUsed: string }> {
+  try {
+    const { data, error } = await client
+      .from(PRIMARY_SIP_TABLE)
+      .select('*')
+      .eq('id', rowId)
+      .maybeSingle();
+
+    if (!error && data) {
+      return { data, error: null, tableUsed: PRIMARY_SIP_TABLE };
+    }
+  } catch {}
+
+  // Fallback auf keller_items
+  try {
+    const { data: fallbackData, error: fallbackError } = await client
+      .from(FALLBACK_SIP_TABLE)
+      .select('*')
+      .eq('id', rowId)
+      .maybeSingle();
+
+    return { data: fallbackData, error: fallbackError, tableUsed: FALLBACK_SIP_TABLE };
+  } catch (err) {
+    return { data: null, error: err, tableUsed: FALLBACK_SIP_TABLE };
+  }
+}
+
+/**
+ * Universelles Upsert für SiP-Datensätze:
+ * Schreibt primär in 'sip_items'. Falls die Tabelle in Supabase noch nicht existiert,
+ * erfolgt ein automatischer Fallback in 'keller_items'.
+ */
+export async function upsertSipRow(
+  client: SupabaseClient,
+  row: {
+    id: string;
+    name: string;
+    category?: string;
+    quantity?: number;
+    payload: any;
+  }
+): Promise<{ success: boolean; error?: any; tableUsed: string }> {
+  const record = {
+    id: row.id,
+    name: row.name,
+    category: row.category || '__sip_system__',
+    quantity: row.quantity ?? 1,
+    updated_at: new Date().toISOString(),
+    payload: row.payload,
+  };
+
+  try {
+    const { error } = await client.from(PRIMARY_SIP_TABLE).upsert(record);
+    if (!error) {
+      return { success: true, tableUsed: PRIMARY_SIP_TABLE };
+    }
+  } catch {}
+
+  // Fallback auf keller_items
+  try {
+    const { error: fallbackError } = await client.from(FALLBACK_SIP_TABLE).upsert(record);
+    return { success: !fallbackError, error: fallbackError, tableUsed: FALLBACK_SIP_TABLE };
+  } catch (err) {
+    return { success: false, error: err, tableUsed: FALLBACK_SIP_TABLE };
+  }
+}
+
 /**
  * Sendet einen 2FA-Bestätigungscode / Magic-Link an die hinterlegte Admin-E-Mail-Adresse über Supabase Auth.
  * Falls das Supabase-Limit erreicht ist, wird rateLimited: true zurückgegeben und der Backup-Code verwendet.
@@ -65,21 +143,16 @@ export async function sendAdmin2FAEmail(
   const backupCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  // Speichere in Supabase keller_items
+  // Speichere in Supabase (sip_items mit Fallback auf keller_items)
   try {
-    const { data: currentRecord } = await client
-      .from('keller_items')
-      .select('payload')
-      .eq('id', SIP_CONFIG_ROW_ID)
-      .maybeSingle();
-
+    const { data: currentRecord } = await querySipRow(client, SIP_CONFIG_ROW_ID);
     const payload = currentRecord?.payload || {};
-    await client.from('keller_items').upsert({
+
+    await upsertSipRow(client, {
       id: SIP_CONFIG_ROW_ID,
       name: 'SiP Benutzerkonten & Einstellungen',
       category: '__sip_system__',
       quantity: settings.memberAccounts.length,
-      updated_at: new Date().toISOString(),
       payload: {
         ...payload,
         twoFactorToken: {
@@ -143,12 +216,7 @@ export async function verifyAdmin2FACode(
     const cleanCandidate = candidateCode.trim();
     if (!cleanCandidate) return false;
     try {
-      const { data } = await client!
-        .from('keller_items')
-        .select('payload')
-        .eq('id', SIP_CONFIG_ROW_ID)
-        .maybeSingle();
-
+      const { data } = await querySipRow(client!, SIP_CONFIG_ROW_ID);
       const payload = data?.payload;
       const t = payload?.twoFactorToken as CloudTwoFactorToken | undefined;
       if (

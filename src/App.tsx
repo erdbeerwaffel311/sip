@@ -15,7 +15,7 @@ import {
 import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
-import { getSupabaseClient, verifyAdmin2FACode } from './utils/supabaseSync';
+import { getSupabaseClient, verifyAdmin2FACode, querySipRow, upsertSipRow } from './utils/supabaseSync';
 import { verifyTotpCode } from './utils/totp';
 
 const STORAGE_KEYS = {
@@ -136,11 +136,7 @@ export const App: React.FC = () => {
 
     async function fetchUsers() {
       try {
-        const { data, error } = await client!
-          .from('keller_items')
-          .select('*')
-          .eq('id', '__sip_users_config__')
-          .maybeSingle();
+        const { data, error } = await querySipRow(client!, '__sip_users_config__');
 
         if (!error && data?.payload) {
           setSettings((prev) => ({
@@ -162,24 +158,18 @@ export const App: React.FC = () => {
     setSettings(newSettings);
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
 
-    // Persistiere in Supabase
+    // Persistiere in Supabase (sip_items mit Fallback auf keller_items)
     const client = getSupabaseClient(newSettings);
     if (client) {
       try {
-        const { data } = await client
-          .from('keller_items')
-          .select('payload')
-          .eq('id', '__sip_users_config__')
-          .maybeSingle();
-
+        const { data } = await querySipRow(client, '__sip_users_config__');
         const oldPayload = data?.payload || {};
 
-        await client.from('keller_items').upsert({
+        await upsertSipRow(client, {
           id: '__sip_users_config__',
           name: 'SiP Benutzerkonten & Einstellungen',
           category: '__sip_system__',
           quantity: newSettings.memberAccounts.length,
-          updated_at: new Date().toISOString(),
           payload: {
             ...oldPayload,
             memberAccounts: newSettings.memberAccounts,

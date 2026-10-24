@@ -135,7 +135,7 @@ export const DEFAULT_SIP_SESSION: SipSession = {
   title: '2. Schüler:innenparlament (SiP) 2024/25',
   driveFolderUrl: 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
   strategyNotes: REAL_SIP_STRATEGY_NOTES,
-  activeAntragId: 'antrag_1',
+  activeAntragId: null,
   voteRecommendation: {
     type: 'KEINE',
     note: '',

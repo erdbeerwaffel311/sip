@@ -53,8 +53,10 @@ class SipRealtimeService {
     }
   }
 
-  private mergeWithFreshPreFabs(session: SipSession): SipSession {
-    let activeId = session.activeAntragId;
+  private hasLoadedCloudSession = false;
+
+  private mergeWithFreshPreFabs(session: Partial<SipSession>): SipSession {
+    let activeId = session.activeAntragId !== undefined ? session.activeAntragId : null;
     if (activeId && activeId.includes('antrag_top_')) {
       activeId = activeId.replace('antrag_top_', 'antrag_');
     }
@@ -80,7 +82,7 @@ class SipRealtimeService {
 
     const refreshedPreFabs = DEFAULT_SIP_SESSION.antraege.map((fresh) => {
       const claim = existingClaims.get(fresh.id);
-      const isCurrentlyActive = activeId ? fresh.id === activeId : (claim?.isActive ?? fresh.isActive);
+      const isCurrentlyActive = activeId ? fresh.id === activeId : (claim?.isActive ?? false);
       return {
         ...fresh,
         claimedBy: claim ? claim.claimedBy : fresh.claimedBy,
@@ -90,9 +92,15 @@ class SipRealtimeService {
     });
 
     return {
+      ...DEFAULT_SIP_SESSION,
       ...session,
+      title: session.title || DEFAULT_SIP_SESSION.title,
+      strategyNotes: session.strategyNotes || DEFAULT_SIP_SESSION.strategyNotes,
+      driveFolderUrl: session.driveFolderUrl || DEFAULT_SIP_SESSION.driveFolderUrl,
       activeAntragId: activeId,
+      voteRecommendation: session.voteRecommendation || DEFAULT_SIP_SESSION.voteRecommendation,
       antraege: [...refreshedPreFabs, ...customAntraege],
+      memes: session.memes && session.memes.length > 0 ? session.memes : DEFAULT_SIP_SESSION.memes,
     };
   }
 
@@ -104,7 +112,8 @@ class SipRealtimeService {
     const newActiveId = merged.activeAntragId;
     const isNewActive = Boolean(newActiveId && newActiveId !== prevActiveId);
 
-    if (isNewActive || !this.currentSession || merged.updatedAt >= this.currentSession.updatedAt) {
+    if (!this.hasLoadedCloudSession || isNewActive || merged.updatedAt >= this.currentSession.updatedAt) {
+      this.hasLoadedCloudSession = true;
       this.currentSession = merged;
       this.notify();
 

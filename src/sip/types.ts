@@ -1,3 +1,5 @@
+import { REAL_SIP_ANTRAEGE, REAL_SIP_STRATEGY_NOTES } from './realSipData';
+
 export type AntragType =
   | 'WM' // Wortmeldung
   | 'AAA' // Abänderungsantrag (AÄA / ÄA)
@@ -118,76 +120,17 @@ export const ANTRAG_TYPE_CONFIG: Record<
 
 export const DEFAULT_SIP_SESSION: SipSession = {
   id: 'sip_current_session',
-  title: 'Schüler:innenparlament (SiP) 2026',
+  title: '2. Schüler:innenparlament (SiP) 2024/25',
   driveFolderUrl: 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
-  strategyNotes: `### 🎯 Strategie-Leitfaden für das Schüler:innenparlament
-- **Fokus 1:** Bildungsinnovation & digitale Infrastruktur an Schulen
-- **Fokus 2:** Schüler:innenvertretungs-Rechte stärken
-- **Taktik bei Gegenanträgen:** Zuerst Wortmeldung (WM) zur sachlichen Richtigstellung, danach bei Bedarf Streichungsantrag (SA) auf die kritischen Passagen.
-- **Redner:innen-Pool:** Anträge rechtzeitig claimen, damit keine Doppelbelegung entsteht!`,
-  activeAntragId: 'antrag_demo_1',
+  strategyNotes: REAL_SIP_STRATEGY_NOTES,
+  activeAntragId: 'antrag_top_1',
   voteRecommendation: {
     type: 'JA',
-    note: 'Wichtiger Initiativantrag für die Stärkung der Schüler:innenrechte – geschlossen mit JA stimmen!',
+    note: 'TOP 1: Änderung der Geschäftsordnung – Keine Einwände der BD. Geschlossen mit JA stimmen!',
     updatedAt: new Date().toISOString(),
     updatedBy: 'Strategieführung',
   },
-  antraege: [
-    {
-      id: 'antrag_demo_1',
-      type: 'AAA',
-      title: 'AÄA zu TOP 3: Digitale Lernmittel & Gerätefreiheit',
-      content: 'In Zeile 45-50 soll "nur schulische Endgeräte" ersetzt werden durch "eine freie Wahl zwischen schulischen und geprüften privaten Endgeräten (BYOD)".',
-      lineOrParagraph: 'Zeile 45-50',
-      author: 'Vorgefertigt (aus SiP-Unterlagen)',
-      isPreFab: true,
-      status: 'approved',
-      claimedBy: null,
-      claimedAt: null,
-      isActive: true,
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: 'antrag_demo_2',
-      type: 'EA',
-      title: 'EA zu TOP 4: Mental Health Tage für Schüler:innen',
-      content: 'Ergänzung um § 4b: Schulen sollen pro Semester bis zu zwei flexible Entlastungstage zur psychosozialen Prävention ermöglichen.',
-      lineOrParagraph: 'Neu: § 4b',
-      author: 'Vorgefertigt (aus SiP-Unterlagen)',
-      isPreFab: true,
-      status: 'approved',
-      claimedBy: 'Simon Märker',
-      claimedAt: new Date(Date.now() - 1800000).toISOString(),
-      isActive: false,
-      createdAt: new Date(Date.now() - 3000000).toISOString(),
-    },
-    {
-      id: 'antrag_demo_3',
-      type: 'ENDE_DEBATTE',
-      title: 'Antrag auf Ende der Debatte zu TOP 2',
-      content: 'Die Debatte dreht sich im Kreis. Antrag auf sofortigen Übergang zur Abstimmung.',
-      author: 'Vorgefertigt',
-      isPreFab: true,
-      status: 'approved',
-      claimedBy: null,
-      claimedAt: null,
-      isActive: false,
-      createdAt: new Date(Date.now() - 2500000).toISOString(),
-    },
-    {
-      id: 'antrag_demo_4',
-      type: 'WM',
-      title: 'WM zu Budgetantrag: Klarstellung Fördertöpfe',
-      content: 'Wortmeldung zur Verdeutlichung, dass die Budgets direkt an die Schulgemeinschaftsausschüsse fließen müssen.',
-      author: 'Vorgefertigt',
-      isPreFab: true,
-      status: 'approved',
-      claimedBy: null,
-      claimedAt: null,
-      isActive: false,
-      createdAt: new Date(Date.now() - 2000000).toISOString(),
-    },
-  ],
+  antraege: REAL_SIP_ANTRAEGE,
   memes: [
     {
       id: 'meme_1',

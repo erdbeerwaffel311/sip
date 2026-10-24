@@ -221,8 +221,8 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
                     </p>
                   </div>
 
-                  {/* Claim Button */}
-                  {onClaim && onUnclaim && (
+                  {/* Claim Button: Nur für Mitglieder und nur für Nebenanträge */}
+                  {onClaim && onUnclaim && !isStrategieLeader && item.type !== 'HAUPTANTRAG' && (
                     <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end">
                       {!item.claimedBy ? (
                         <button
@@ -233,7 +233,7 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
                           <UserCheck className="w-3.5 h-3.5" />
                           <span>Redezeit claimen</span>
                         </button>
-                      ) : isClaimedByMe || isStrategieLeader ? (
+                      ) : isClaimedByMe ? (
                         <button
                           type="button"
                           onClick={() => onUnclaim(item.id)}

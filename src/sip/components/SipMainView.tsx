@@ -1022,53 +1022,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       )}
                     </div>
 
-                    {/* Redezeit / Claiming Section */}
-                    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-                      <div>
-                        <span className="text-xs font-semibold text-slate-400 block mb-0.5">
-                          Redner:in zu diesem Antrag:
-                        </span>
-                        {activeAntrag.claimedBy ? (
-                          <div className="flex items-center gap-2 text-sm font-bold text-white">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <span>
-                              {activeAntrag.claimedBy === currentUserName ? (
-                                <span className="text-emerald-300">Du hältst diese Rede! 🎙️</span>
-                              ) : (
-                                <span>Geclaimed von: <strong>{activeAntrag.claimedBy}</strong></span>
-                              )}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-amber-400 font-medium italic">
-                            Noch kein(e) Redner:in eingeteilt – halte jetzt deine Rede!
-                          </span>
-                        )}
-                      </div>
-
-                      <div>
-                        {!activeAntrag.claimedBy ? (
-                          <button
-                            type="button"
-                            onClick={() => handleClaimAntrag(activeAntrag.id)}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md shadow-sky-500/20 transition cursor-pointer"
-                          >
-                            <UserCheck className="w-4 h-4" />
-                            <span>Redezeit claimen</span>
-                          </button>
-                        ) : activeAntrag.claimedBy === currentUserName ? (
-                          <button
-                            type="button"
-                            onClick={() => handleUnclaimAntrag(activeAntrag.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-rose-300 border border-slate-700 text-xs font-medium transition cursor-pointer"
-                          >
-                            <UserX className="w-3.5 h-3.5" />
-                            <span>Claim abgeben</span>
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
                     {/* Interaktiver Bereich: ÄA, EA, SA, WM einreichen */}
                     <div className="p-5 rounded-2xl bg-gradient-to-r from-sky-950/40 via-slate-950 to-indigo-950/40 border border-sky-500/30">
                       <div className="flex items-center gap-2 mb-2">

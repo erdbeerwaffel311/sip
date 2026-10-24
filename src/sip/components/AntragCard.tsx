@@ -267,56 +267,64 @@ export const AntragCard: React.FC<AntragCardProps> = ({
 
         {/* Right / Bottom: Claim Status & Actions */}
         <div className="flex flex-col sm:items-end justify-between gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800">
-          {/* Claim Status Display */}
-          <div className="flex items-center gap-1.5 text-xs">
-            {antrag.claimedBy ? (
-              <div
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl font-bold border ${
-                  isClaimedByMe
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>
-                  {isClaimedByMe ? (
-                    <>Von dir geclaimed</>
-                  ) : (
-                    <>
-                      Geclaimed von: <strong>{antrag.claimedBy}</strong>
-                    </>
-                  )}
+          {/* Claim Status Display: Hauptanträge können nicht geclaimed werden, daher nur für Nebenanträge */}
+          {antrag.type !== 'HAUPTANTRAG' && (
+            <div className="flex items-center gap-1.5 text-xs">
+              {antrag.claimedBy ? (
+                <div
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl font-bold border ${
+                    isClaimedByMe
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    {isClaimedByMe ? (
+                      <>Von dir geclaimed</>
+                    ) : (
+                      <>
+                        Geclaimed von: <strong>{antrag.claimedBy}</strong>
+                      </>
+                    )}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-slate-400 text-xs italic">
+                  Noch nicht vergeben
                 </span>
-              </div>
-            ) : (
-              <span className="text-slate-400 text-xs italic">
-                Noch nicht vergeben
-              </span>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
-          {/* Claiming Buttons */}
+          {/* Claiming Buttons:
+              1. Hauptanträge können nicht geclaimed werden.
+              2. In der Strategieführungsansicht kann nichts geclaimed werden (es steht nur dort, wer geclaimed hat).
+              3. Mitglieder können Nebenanträge claimen / Claim abgeben.
+          */}
           <div className="flex flex-wrap items-center gap-2">
-            {!antrag.claimedBy ? (
-              <button
-                type="button"
-                onClick={() => onClaim(antrag.id)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md shadow-sky-500/20 transition cursor-pointer"
-              >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>Antrag claimen</span>
-              </button>
-            ) : isClaimedByMe || isStrategieLeader ? (
-              <button
-                type="button"
-                onClick={() => onUnclaim(antrag.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 font-medium text-xs transition cursor-pointer"
-                title="Claim freigeben"
-              >
-                <UserX className="w-3.5 h-3.5" />
-                <span>Claim abgeben</span>
-              </button>
-            ) : null}
+            {antrag.type !== 'HAUPTANTRAG' && !isStrategieLeader && (
+              !antrag.claimedBy ? (
+                <button
+                  type="button"
+                  onClick={() => onClaim(antrag.id)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md shadow-sky-500/20 transition cursor-pointer"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Antrag claimen</span>
+                </button>
+              ) : isClaimedByMe ? (
+                <button
+                  type="button"
+                  onClick={() => onUnclaim(antrag.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 font-medium text-xs transition cursor-pointer"
+                  title="Claim freigeben"
+                >
+                  <UserX className="w-3.5 h-3.5" />
+                  <span>Claim abgeben</span>
+                </button>
+              ) : null
+            )}
 
             {/* Strategieführung Controls */}
             {isStrategieLeader && (

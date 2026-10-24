@@ -119,7 +119,7 @@ export const ANTRAG_TYPE_CONFIG: Record<
 export const DEFAULT_SIP_SESSION: SipSession = {
   id: 'sip_current_session',
   title: 'Schüler:innenparlament (SiP) 2026',
-  driveFolderUrl: 'https://drive.google.com/drive/folders/demo-sip-2026',
+  driveFolderUrl: 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
   strategyNotes: `### 🎯 Strategie-Leitfaden für das Schüler:innenparlament
 - **Fokus 1:** Bildungsinnovation & digitale Infrastruktur an Schulen
 - **Fokus 2:** Schüler:innenvertretungs-Rechte stärken

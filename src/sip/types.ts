@@ -30,6 +30,7 @@ export interface SipAntrag {
   claimedBy?: string | null;
   claimedAt?: string | null;
   isActive?: boolean; // Aktuell im Plenum aufgerufen
+  parentAntragId?: string; // Verknüpfung zu übergeordnetem TOP/Antrag
   createdAt: string;
   approvedAt?: string;
   adminNotes?: string;

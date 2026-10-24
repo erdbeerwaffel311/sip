@@ -5,6 +5,8 @@ import { ANTRAG_TYPE_CONFIG, AntragType, SipAntrag } from '../types';
 interface NewAntragModalProps {
   currentUserName: string;
   isStrategieLeader: boolean;
+  parentAntrag?: SipAntrag | null;
+  defaultType?: AntragType;
   onClose: () => void;
   onSubmit: (antrag: Omit<SipAntrag, 'id' | 'isPreFab' | 'status' | 'createdAt'>) => void;
 }
@@ -12,12 +14,16 @@ interface NewAntragModalProps {
 export const NewAntragModal: React.FC<NewAntragModalProps> = ({
   currentUserName,
   isStrategieLeader,
+  parentAntrag,
+  defaultType = 'AAA',
   onClose,
   onSubmit,
 }) => {
-  const [type, setType] = useState<AntragType>('AAA');
-  const [title, setTitle] = useState('');
-  const [lineOrParagraph, setLineOrParagraph] = useState('');
+  const [type, setType] = useState<AntragType>(defaultType);
+  const [title, setTitle] = useState(
+    parentAntrag ? `${defaultType === 'AAA' ? 'ÄA zu' : defaultType === 'EA' ? 'EA zu' : defaultType === 'SA' ? 'SA zu' : defaultType === 'WM' ? 'Wortmeldung zu' : 'Antrag zu'} ${parentAntrag.title}` : ''
+  );
+  const [lineOrParagraph, setLineOrParagraph] = useState(parentAntrag?.lineOrParagraph || '');
   const [content, setContent] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -35,6 +41,7 @@ export const NewAntragModal: React.FC<NewAntragModalProps> = ({
       content: content.trim(),
       author: currentUserName,
       isActive: false,
+      parentAntragId: parentAntrag?.id,
     });
     onClose();
   }
@@ -62,6 +69,15 @@ export const NewAntragModal: React.FC<NewAntragModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {parentAntrag && (
+          <div className="mb-4 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center gap-2.5 text-xs text-sky-300">
+            <Info className="w-4 h-4 shrink-0 text-sky-400" />
+            <span>
+              Bezieht sich auf aktuellen TOP: <strong>{parentAntrag.title}</strong>
+            </span>
+          </div>
+        )}
 
         {errorMsg && (
           <div className="mb-4 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-xs text-rose-300">

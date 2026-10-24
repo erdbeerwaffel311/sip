@@ -16,6 +16,9 @@ import {
   FileText,
   User,
   Users,
+  Play,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -52,11 +55,18 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 }) => {
   const [session, setSession] = useState<SipSession>(() => sipRealtime.getSession());
   const [currentSubTab, setCurrentSubTab] = useState<SipSubTab>('antraege');
-  const [isStrategieLeader, setIsStrategieLeader] = useState<boolean>(isAdminUnlocked);
+  const [isStrategieLeader, setIsStrategieLeader] = useState<boolean>(
+    () => isAdminUnlocked || currentMember?.role === 'strategie' || currentMember?.role === 'admin'
+  );
 
   // Modals & Popups
   const [activeBlurAntrag, setActiveBlurAntrag] = useState<SipAntrag | null>(null);
+  const [confirmActivateAntrag, setConfirmActivateAntrag] = useState<SipAntrag | null>(null);
   const [showNewAntragModal, setShowNewAntragModal] = useState(false);
+  const [newAntragPreset, setNewAntragPreset] = useState<{
+    defaultType?: AntragType;
+    parentAntrag?: SipAntrag | null;
+  } | null>(null);
   const [editingAntrag, setEditingAntrag] = useState<SipAntrag | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
 
@@ -79,7 +89,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     });
 
     const unsubBlur = sipRealtime.onBlurPopup((antrag) => {
-      // Blurry Screen nur anzeigen, wenn der Nutzer nicht selbst gerade der Admin ist, der ihn aufgerufen hat
       setActiveBlurAntrag(antrag);
     });
 
@@ -98,12 +107,12 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     };
   }, [settings]);
 
-  // Wenn globaler Admin entsperrt ist, Strategieführung aktivieren
+  // Wenn globaler Admin entsperrt ist oder Rolle strategie ist, Strategieführung aktivieren
   useEffect(() => {
-    if (isAdminUnlocked) {
+    if (isAdminUnlocked || currentMember?.role === 'strategie' || currentMember?.role === 'admin') {
       setIsStrategieLeader(true);
     }
-  }, [isAdminUnlocked]);
+  }, [isAdminUnlocked, currentMember]);
 
   // Anträge filtern
   const filteredAntraege = useMemo(() => {
@@ -153,9 +162,30 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     return session.antraege.filter((a) => a.status === 'pending_approval').length;
   }, [session.antraege]);
 
+  // Aktuell im Plenum aufgerufener Antrag
+  const activeAntrag = useMemo(() => {
+    if (session.activeAntragId) {
+      const found = session.antraege.find((a) => a.id === session.activeAntragId);
+      if (found) return found;
+    }
+    return session.antraege.find((a) => a.isActive) || null;
+  }, [session.activeAntragId, session.antraege]);
+
+  // Zusatzanträge & Wortmeldungen zu diesem aktiven Antrag
+  const activeSubAntraege = useMemo(() => {
+    if (!activeAntrag) return [];
+    return session.antraege.filter(
+      (a) => a.parentAntragId === activeAntrag.id && a.status === 'approved'
+    );
+  }, [activeAntrag, session.antraege]);
+
   // Handlers
   function handleActivateAntrag(antragId: string) {
     sipRealtime.activateAntrag(antragId, settings);
+  }
+
+  function handleClearActiveAntrag() {
+    sipRealtime.clearActiveAntrag(settings);
   }
 
   function handleClaimAntrag(antragId: string) {
@@ -263,12 +293,96 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         />
       )}
 
+      {/* Bestätigungsfenster: Antrag im Plenum aufrufen */}
+      {confirmActivateAntrag && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-lg bg-slate-900 border-2 border-sky-500/50 rounded-3xl p-6 sm:p-7 shadow-2xl text-white">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-sky-500/20 text-sky-400 border border-sky-500/40 flex items-center justify-center shrink-0">
+                <Play className="w-6 h-6 fill-current" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">
+                  Antrag im Plenum aufrufen?
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Wird auf allen Geräten der Delegierten live geschaltet
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 mb-5">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
+                    ANTRAG_TYPE_CONFIG[confirmActivateAntrag.type]?.badgeColor || 'bg-slate-800'
+                  }`}
+                >
+                  {ANTRAG_TYPE_CONFIG[confirmActivateAntrag.type]?.shortLabel}
+                </span>
+                {confirmActivateAntrag.lineOrParagraph && (
+                  <span className="text-xs text-slate-400 font-mono">
+                    📍 {confirmActivateAntrag.lineOrParagraph}
+                  </span>
+                )}
+                {confirmActivateAntrag.claimedBy && (
+                  <span className="text-xs text-emerald-400 font-semibold ml-auto">
+                    🎙️ {confirmActivateAntrag.claimedBy}
+                  </span>
+                )}
+              </div>
+              <h4 className="font-bold text-sm sm:text-base text-slate-100">
+                {confirmActivateAntrag.title}
+              </h4>
+              <p className="text-xs text-slate-400 line-clamp-3 italic">
+                "{confirmActivateAntrag.content}"
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 mb-6 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <span className="leading-relaxed">
+                Soll dieser Antrag nun auf allen Geräten angezeigt werden? Es ertönt ein akustischer Hinweis und das Blurry-Vollbildoverlay öffnet sich auf allen Bildschirmen.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmActivateAntrag(null)}
+                className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = confirmActivateAntrag;
+                  setConfirmActivateAntrag(null);
+                  handleActivateAntrag(target.id);
+                  setActiveBlurAntrag(target);
+                }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/25 transition cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Ja, auf allen Geräten aufrufen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modals for Custom Motion, Edit Motion, Parser */}
       {showNewAntragModal && (
         <NewAntragModal
           currentUserName={currentUserName}
           isStrategieLeader={isStrategieLeader}
-          onClose={() => setShowNewAntragModal(false)}
+          parentAntrag={newAntragPreset?.parentAntrag}
+          defaultType={newAntragPreset?.defaultType || 'AAA'}
+          onClose={() => {
+            setShowNewAntragModal(false);
+            setNewAntragPreset(null);
+          }}
           onSubmit={handleCreateAntrag}
         />
       )}
@@ -444,177 +558,471 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
       {/* Subtab 1: Anträge & Wortmeldungen */}
       {currentSubTab === 'antraege' && (
         <div className="space-y-5">
-          {/* Action Row: Create Motion & Import Button */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowNewAntragModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/20 transition cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Neuen Antrag schreiben</span>
-              </button>
+          {/* ========================================================================= */}
+          {/* A: STRATEGIEFÜHRUNGS-VIEW (Alle Anträge untereinander sichtbar & aufrufbar) */}
+          {/* ========================================================================= */}
+          {isStrategieLeader ? (
+            <div className="space-y-5">
+              {/* Active Plenum Banner for Leadership */}
+              {activeAntrag && (
+                <div className="bg-gradient-to-r from-sky-950/60 via-slate-900 to-indigo-950/60 border-2 border-sky-400 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-3">
+                    <span className="relative flex h-3.5 w-3.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider">
+                          Aktuell auf allen Geräten im Plenum aktiv
+                        </span>
+                        <span className={`px-2 py-0.2 rounded text-[10px] font-bold border ${ANTRAG_TYPE_CONFIG[activeAntrag.type]?.badgeColor}`}>
+                          {ANTRAG_TYPE_CONFIG[activeAntrag.type]?.shortLabel}
+                        </span>
+                      </div>
+                      <h3 className="text-base sm:text-lg font-bold text-white">
+                        {activeAntrag.title}
+                      </h3>
+                      {activeAntrag.claimedBy && (
+                        <p className="text-xs text-emerald-400 font-medium">
+                          🎙️ Redner:in: {activeAntrag.claimedBy}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-              {isStrategieLeader && (
-                <button
-                  type="button"
-                  onClick={() => setShowParserModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-bold text-xs sm:text-sm transition cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Aus Dokument einlesen</span>
-                </button>
-              )}
-            </div>
-
-            <div className="text-xs text-slate-400 font-medium">
-              Zeige {filteredAntraege.length} von {session.antraege.length} Anträgen
-            </div>
-          </div>
-
-          {/* Filter Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2">
-              {/* Search */}
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Suche nach Zeile, Stichwort, Redner:in oder Titel..."
-                className="flex-1 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-sky-500"
-              />
-
-              {/* Claim Filter Buttons */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-                <button
-                  type="button"
-                  onClick={() => setClaimFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                    claimFilter === 'ALL'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:bg-slate-800'
-                  }`}
-                >
-                  Alle Anträge
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setClaimFilter('FREE')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                    claimFilter === 'FREE'
-                      ? 'bg-sky-500 text-slate-950'
-                      : 'text-slate-400 hover:bg-slate-800'
-                  }`}
-                >
-                  🟢 Noch frei
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setClaimFilter('MINE')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                    claimFilter === 'MINE'
-                      ? 'bg-emerald-500 text-slate-950'
-                      : 'text-slate-400 hover:bg-slate-800'
-                  }`}
-                >
-                  Meine geclaimten
-                </button>
-              </div>
-            </div>
-
-            {/* Type Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-              <button
-                type="button"
-                onClick={() => setTypeFilter('ALL')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
-                  typeFilter === 'ALL'
-                    ? 'bg-sky-500 text-slate-950'
-                    : 'bg-slate-950 text-slate-400 hover:text-white'
-                }`}
-              >
-                Alle Typen
-              </button>
-              {(Object.keys(ANTRAG_TYPE_CONFIG) as AntragType[]).map((t) => {
-                const conf = ANTRAG_TYPE_CONFIG[t];
-                return (
                   <button
-                    key={t}
                     type="button"
-                    onClick={() => setTypeFilter(t)}
-                    className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer whitespace-nowrap ${
-                      typeFilter === t
-                        ? 'bg-white text-slate-950 border-white'
-                        : `${conf.badgeColor} hover:opacity-80`
+                    onClick={handleClearActiveAntrag}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold self-start sm:self-auto cursor-pointer transition"
+                    title="Beendet die Live-Anzeige im Plenum (Mitglieder kehren auf den Warteraum zurück)"
+                  >
+                    <span>Aufruf beenden (Pause)</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Action Row: Create Motion & Import Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewAntragPreset(null);
+                      setShowNewAntragModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/20 transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Neuen Antrag schreiben</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowParserModal(true)}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-bold text-xs sm:text-sm transition cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Aus Dokument einlesen</span>
+                  </button>
+                </div>
+
+                <div className="text-xs text-slate-400 font-medium">
+                  Zeige {filteredAntraege.length} von {session.antraege.length} Anträgen (Strategieführungs-Ansicht)
+                </div>
+              </div>
+
+              {/* Filter Bar */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  {/* Search */}
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Suche nach Zeile, Stichwort, Redner:in oder Titel..."
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-sky-500"
+                  />
+
+                  {/* Claim Filter Buttons */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+                    <button
+                      type="button"
+                      onClick={() => setClaimFilter('ALL')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                        claimFilter === 'ALL'
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:bg-slate-800'
+                      }`}
+                    >
+                      Alle Anträge
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClaimFilter('FREE')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                        claimFilter === 'FREE'
+                          ? 'bg-sky-500 text-slate-950'
+                          : 'text-slate-400 hover:bg-slate-800'
+                      }`}
+                    >
+                      🟢 Noch frei
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClaimFilter('MINE')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                        claimFilter === 'MINE'
+                          ? 'bg-emerald-500 text-slate-950'
+                          : 'text-slate-400 hover:bg-slate-800'
+                      }`}
+                    >
+                      Meine geclaimten
+                    </button>
+                  </div>
+                </div>
+
+                {/* Type Filter Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setTypeFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
+                      typeFilter === 'ALL'
+                        ? 'bg-sky-500 text-slate-950'
+                        : 'bg-slate-950 text-slate-400 hover:text-white'
                     }`}
                   >
-                    {conf.shortLabel}
+                    Alle Typen
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Pending Approval Section for Leadership */}
-          {pendingCount > 0 && isStrategieLeader && (
-            <div className="bg-amber-950/20 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertCircle className="w-5 h-5 text-amber-400" />
-                <h3 className="text-sm font-bold text-amber-300">
-                  Anträge von Mitgliedern zur Prüfung & Freigabe ({pendingCount})
-                </h3>
+                  {(Object.keys(ANTRAG_TYPE_CONFIG) as AntragType[]).map((t) => {
+                    const conf = ANTRAG_TYPE_CONFIG[t];
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTypeFilter(t)}
+                        className={`px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer whitespace-nowrap ${
+                          typeFilter === t
+                            ? 'bg-white text-slate-950 border-white'
+                            : `${conf.badgeColor} hover:opacity-80`
+                        }`}
+                      >
+                        {conf.shortLabel}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-3">
-                {session.antraege
-                  .filter((a) => a.status === 'pending_approval')
-                  .map((antrag) => (
+
+              {/* Pending Approval Section for Leadership */}
+              {pendingCount > 0 && (
+                <div className="bg-amber-950/20 border-2 border-amber-500/40 rounded-3xl p-4 sm:p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-5 h-5 text-amber-400" />
+                    <h3 className="text-sm font-bold text-amber-300">
+                      Anträge von Mitgliedern zur Prüfung & Freigabe ({pendingCount})
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    {session.antraege
+                      .filter((a) => a.status === 'pending_approval')
+                      .map((antrag) => (
+                        <AntragCard
+                          key={antrag.id}
+                          antrag={antrag}
+                          currentUserName={currentUserName}
+                          isStrategieLeader={true}
+                          onClaim={handleClaimAntrag}
+                          onUnclaim={handleUnclaimAntrag}
+                          onActivate={(a) => setConfirmActivateAntrag(a)}
+                          onEdit={(a) => setEditingAntrag(a)}
+                          onDelete={handleDeleteAntrag}
+                          onApprove={handleApproveAntrag}
+                          onReject={handleRejectAntrag}
+                        />
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hint Bar for Leadership */}
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-400">
+                <Play className="w-3.5 h-3.5 text-sky-400" />
+                <span>
+                  <strong>Tipp:</strong> Klicke auf einen Antrag oder den Button <strong>„Aufrufen“</strong>, um das Bestätigungsfenster zu öffnen und den Antrag im Plenum für alle sichtbar zu schalten.
+                </span>
+              </div>
+
+              {/* Motion Cards List Untereinander */}
+              <div className="space-y-3.5">
+                {filteredAntraege.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-900/50 rounded-3xl border border-slate-800 text-slate-400">
+                    <Gavel className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+                    <p className="text-sm font-medium">Keine Anträge gefunden.</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Passe deine Filtereinstellungen an oder erstelle einen neuen Antrag!
+                    </p>
+                  </div>
+                ) : (
+                  filteredAntraege.map((antrag) => (
                     <AntragCard
                       key={antrag.id}
                       antrag={antrag}
                       currentUserName={currentUserName}
-                      isStrategieLeader={isStrategieLeader}
+                      isStrategieLeader={true}
                       onClaim={handleClaimAntrag}
                       onUnclaim={handleUnclaimAntrag}
-                      onActivate={handleActivateAntrag}
+                      onActivate={(a) => setConfirmActivateAntrag(a)}
                       onEdit={(a) => setEditingAntrag(a)}
                       onDelete={handleDeleteAntrag}
                       onApprove={handleApproveAntrag}
                       onReject={handleRejectAntrag}
                     />
-                  ))}
+                  ))
+                )}
               </div>
             </div>
-          )}
+          ) : (
+            /* ========================================================================= */
+            /* B: MITGLIEDER-VIEW (Immer nur der von der Strategieführung freigegebene TOP) */
+            /* ========================================================================= */
+            <div className="space-y-5">
+              {activeAntrag ? (
+                <div className="space-y-5">
+                  {/* Hero Card des aktuell freigegebenen Antrags */}
+                  <div className="relative bg-slate-900 border-2 border-sky-400 rounded-3xl p-5 sm:p-7 shadow-2xl shadow-sky-500/15 overflow-hidden">
+                    {/* Background glow */}
+                    <div className="absolute -top-24 -right-24 w-56 h-56 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Motion Cards List */}
-          <div className="space-y-3.5">
-            {filteredAntraege.length === 0 ? (
-              <div className="p-8 text-center bg-slate-900/50 rounded-3xl border border-slate-800 text-slate-400">
-                <Gavel className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                <p className="text-sm font-medium">Keine Anträge gefunden.</p>
-                <p className="text-xs text-slate-500 mt-1">
-                  Passe deine Filtereinstellungen an oder reiche einen neuen Antrag ein!
-                </p>
-              </div>
-            ) : (
-              filteredAntraege.map((antrag) => (
-                <AntragCard
-                  key={antrag.id}
-                  antrag={antrag}
-                  currentUserName={currentUserName}
-                  isStrategieLeader={isStrategieLeader}
-                  onClaim={handleClaimAntrag}
-                  onUnclaim={handleUnclaimAntrag}
-                  onActivate={handleActivateAntrag}
-                  onEdit={(a) => setEditingAntrag(a)}
-                  onDelete={handleDeleteAntrag}
-                  onApprove={handleApproveAntrag}
-                  onReject={handleRejectAntrag}
-                />
-              ))
-            )}
-          </div>
+                    {/* Top Header Badge */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-black uppercase tracking-wider">
+                          <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                          Aktuell im Plenum aufgerufen
+                        </span>
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                            ANTRAG_TYPE_CONFIG[activeAntrag.type]?.badgeColor || 'bg-slate-800 text-slate-200'
+                          }`}
+                        >
+                          {ANTRAG_TYPE_CONFIG[activeAntrag.type]?.shortLabel} • {ANTRAG_TYPE_CONFIG[activeAntrag.type]?.label}
+                        </span>
+                      </div>
+
+                      {activeAntrag.lineOrParagraph && (
+                        <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+                          📍 {activeAntrag.lineOrParagraph}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Motion Title & Content */}
+                    <h2 className="text-xl sm:text-2xl font-black text-white mb-3 leading-tight">
+                      {activeAntrag.title}
+                    </h2>
+
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
+                      {activeAntrag.content}
+                    </div>
+
+                    {/* Bildungsdirektion / Admin Notes if present */}
+                    {activeAntrag.adminNotes && (
+                      <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs sm:text-sm text-amber-200">
+                        <span className="font-bold block text-amber-300 mb-1">
+                          🏛️ Stellungnahme & Erläuterung der Bildungsdirektion:
+                        </span>
+                        <p className="leading-relaxed whitespace-pre-wrap">
+                          {activeAntrag.adminNotes}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Redezeit / Claiming Section */}
+                    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-400 block mb-0.5">
+                          Redner:in zu diesem Antrag:
+                        </span>
+                        {activeAntrag.claimedBy ? (
+                          <div className="flex items-center gap-2 text-sm font-bold text-white">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            <span>
+                              {activeAntrag.claimedBy === currentUserName ? (
+                                <span className="text-emerald-300">Du hältst diese Rede! 🎙️</span>
+                              ) : (
+                                <span>Geclaimed von: <strong>{activeAntrag.claimedBy}</strong></span>
+                              )}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-amber-400 font-medium italic">
+                            Noch kein(e) Redner:in eingeteilt – halte jetzt deine Rede!
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        {!activeAntrag.claimedBy ? (
+                          <button
+                            type="button"
+                            onClick={() => handleClaimAntrag(activeAntrag.id)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm shadow-md shadow-sky-500/20 transition cursor-pointer"
+                          >
+                            <UserCheck className="w-4 h-4" />
+                            <span>Redezeit claimen</span>
+                          </button>
+                        ) : activeAntrag.claimedBy === currentUserName ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUnclaimAntrag(activeAntrag.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-rose-300 border border-slate-700 text-xs font-medium transition cursor-pointer"
+                          >
+                            <UserX className="w-3.5 h-3.5" />
+                            <span>Claim abgeben</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Interaktiver Bereich: ÄA, EA, SA, WM einreichen */}
+                    <div className="p-5 rounded-2xl bg-gradient-to-r from-sky-950/40 via-slate-950 to-indigo-950/40 border border-sky-500/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-sky-400" />
+                        <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-sky-300">
+                          Zusatzantrag oder Wortmeldung zu diesem TOP
+                        </h4>
+                      </div>
+                      <p className="text-xs text-slate-400 mb-4">
+                        Möchtest du eine Änderung, Streichung oder Wortmeldung zu diesem aktuellen TOP einbringen?
+                      </p>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'AAA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-sky-500/20 border border-sky-500/40 text-sky-200 transition text-center cursor-pointer group shadow"
+                        >
+                          <span className="text-sm font-black group-hover:scale-105 transition">✏️ ÄA</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Abänderungsantrag</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'EA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 transition text-center cursor-pointer group shadow"
+                        >
+                          <span className="text-sm font-black group-hover:scale-105 transition">➕ EA</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Erweiterungsantrag</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'SA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-rose-500/20 border border-rose-500/40 text-rose-200 transition text-center cursor-pointer group shadow"
+                        >
+                          <span className="text-sm font-black group-hover:scale-105 transition">❌ SA</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Streichungsantrag</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'WM', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-amber-500/20 border border-amber-500/40 text-amber-200 transition text-center cursor-pointer group shadow"
+                        >
+                          <span className="text-sm font-black group-hover:scale-105 transition">🙋 WM</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Wortmeldung</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'ENDE_DEBATTE', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-purple-500/20 border border-purple-500/40 text-purple-200 transition text-center cursor-pointer group shadow col-span-2 sm:col-span-1"
+                        >
+                          <span className="text-sm font-black group-hover:scale-105 transition">⚖️ GO</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">Geschäftsordnung</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Eingereichte & freigegebene Zusatzanträge zu diesem TOP */}
+                  {activeSubAntraege.length > 0 && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
+                      <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                        <span>Zusatzanträge zu diesem TOP ({activeSubAntraege.length})</span>
+                      </h3>
+                      <div className="space-y-3">
+                        {activeSubAntraege.map((sub) => (
+                          <div
+                            key={sub.id}
+                            className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-white"
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor}`}>
+                                {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel} • {ANTRAG_TYPE_CONFIG[sub.type]?.label}
+                              </span>
+                              <span className="text-[11px] text-slate-400">von {sub.author}</span>
+                            </div>
+                            <h4 className="font-bold text-sm text-slate-200 mb-1">{sub.title}</h4>
+                            <p className="text-xs text-slate-400 whitespace-pre-wrap">{sub.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Warteraum wenn noch kein Antrag aufgerufen ist */
+                <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 sm:p-12 text-center text-white shadow-xl flex flex-col items-center justify-center">
+                  <div className="relative mb-5">
+                    <div className="w-16 h-16 rounded-3xl bg-sky-500/20 text-sky-400 border border-sky-500/40 flex items-center justify-center animate-pulse">
+                      <Radio className="w-8 h-8" />
+                    </div>
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-400 animate-ping" />
+                  </div>
+
+                  <span className="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1">
+                    Plenum bereit • Live verbunden
+                  </span>
+                  <h3 className="text-xl sm:text-2xl font-black text-white mb-2">
+                    Warte auf Aufruf der Strategieführung...
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mb-6 leading-relaxed">
+                    Sobald die Strategieführung den nächsten Antrag im Plenum aufruft, ploppt dieser automatisch mit akustischem Signal und Vollbild-Overlay auf deinem Bildschirm auf.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewAntragPreset(null);
+                      setShowNewAntragModal(true);
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Antrag / Wortmeldung vorab vorbereiten</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

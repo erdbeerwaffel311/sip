@@ -21,7 +21,7 @@ interface AntragCardProps {
   isStrategieLeader: boolean;
   onClaim: (antragId: string) => void;
   onUnclaim: (antragId: string) => void;
-  onActivate: (antragId: string) => void;
+  onActivate: (antrag: SipAntrag) => void;
   onEdit: (antrag: SipAntrag) => void;
   onDelete: (antragId: string) => void;
   onApprove?: (antragId: string) => void;
@@ -48,7 +48,14 @@ export const AntragCard: React.FC<AntragCardProps> = ({
   return (
     <div
       id={`antrag-${antrag.id}`}
+      onClick={() => {
+        if (isStrategieLeader && !antrag.isActive) {
+          onActivate(antrag);
+        }
+      }}
       className={`relative rounded-2xl border transition-all duration-300 p-4 sm:p-5 ${
+        isStrategieLeader && !antrag.isActive ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
+      } ${
         antrag.isActive
           ? 'bg-slate-900 border-sky-400 ring-2 ring-sky-400/40 shadow-xl shadow-sky-500/10'
           : isPending
@@ -204,21 +211,32 @@ export const AntragCard: React.FC<AntragCardProps> = ({
             {/* Strategieführung Controls */}
             {isStrategieLeader && (
               <div className="flex items-center gap-1.5 border-l border-slate-800 pl-2">
-                {!antrag.isActive && (
+                {!antrag.isActive ? (
                   <button
                     type="button"
-                    onClick={() => onActivate(antrag.id)}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition cursor-pointer"
-                    title="Im Plenum aufrufen (ploppt auf allen Geräten auf!)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onActivate(antrag);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/25 transition cursor-pointer"
+                    title="Im Plenum aufrufen (Bestätigungsfenster)"
                   >
-                    <Play className="w-3 h-3 fill-current" />
+                    <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Aufrufen</span>
                   </button>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    Aktiv
+                  </span>
                 )}
 
                 <button
                   type="button"
-                  onClick={() => onEdit(antrag)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(antrag);
+                  }}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
                   title="Antrag bearbeiten"
                 >
@@ -227,7 +245,10 @@ export const AntragCard: React.FC<AntragCardProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => onDelete(antrag.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(antrag.id);
+                  }}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition cursor-pointer"
                   title="Antrag löschen"
                 >

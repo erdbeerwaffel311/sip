@@ -157,21 +157,21 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
       </div>
 
       {/* Embedded Google Drive Frame or Interactive Card */}
-      <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 min-h-[360px] sm:min-h-[480px]">
+      <div className="relative rounded-2xl overflow-hidden border-2 border-slate-700 bg-white min-h-[400px] sm:min-h-[520px] shadow-lg">
         {embedUrl && embedUrl.includes('drive.google.com') ? (
           <iframe
             src={embedUrl}
             title="Google Drive SiP Ordner"
-            className="w-full h-[480px] border-0"
+            className="w-full h-[520px] border-0 bg-white"
             allow="autoplay"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center p-8 text-center h-[360px]">
-            <FolderOpen className="w-14 h-14 text-slate-600 mb-3" />
-            <h4 className="text-base font-bold text-slate-200 mb-1">
+          <div className="flex flex-col items-center justify-center p-8 text-center h-[360px] bg-slate-950 text-white">
+            <FolderOpen className="w-14 h-14 text-slate-500 mb-3" />
+            <h4 className="text-base font-bold text-white mb-1">
               Google Drive Ordner verknüpft
             </h4>
-            <p className="text-xs text-slate-400 max-w-md mb-4">
+            <p className="text-xs text-slate-300 max-w-md mb-4">
               Klicke auf den Button, um alle SiP-Dateien, Antragsformulare und Beschlussanträge direkt in Google Drive zu öffnen.
             </p>
             <a

@@ -340,6 +340,28 @@ class SipRealtimeService {
   }
 
   /**
+   * Strategieführung beendet den aktuellen Aufruf (Pause / Zwischenabstimmung)
+   */
+  public clearActiveAntrag(settings?: AppSettings) {
+    this.currentSession = {
+      ...this.currentSession,
+      activeAntragId: null,
+      antraege: this.currentSession.antraege.map((a) => ({
+        ...a,
+        isActive: false,
+      })),
+      updatedAt: new Date().toISOString(),
+    };
+    this.notify();
+
+    const msg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(msg, settings);
+  }
+
+  /**
    * Abstimmungsempfehlung zentral pushen
    */
   public setVoteRecommendation(

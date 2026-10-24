@@ -173,7 +173,7 @@ export const DEFAULT_SIP_SESSION: SipSession = {
   voteRecommendation: {
     type: 'KEINE',
     note: '',
-    updatedAt: new Date().toISOString(),
+    updatedAt: '2026-01-01T00:00:00.000Z',
     updatedBy: 'Strategieführung',
     isPublished: false,
   },
@@ -184,7 +184,7 @@ export const DEFAULT_SIP_SESSION: SipSession = {
       author: 'Strategieführung',
       imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=600&auto=format&fit=crop&q=80',
       caption: 'Wenn der Antrag auf Ende der Debatte endlich durchgeht nach 3 Stunden Diskussion ☕️',
-      createdAt: new Date(Date.now() - 2400000).toISOString(),
+      createdAt: '2026-01-01T00:00:00.000Z',
       reactions: {
         '😂': ['Simon Märker', 'Celil-Kaan Beler'],
         '🔥': ['Strategieführung'],
@@ -192,5 +192,5 @@ export const DEFAULT_SIP_SESSION: SipSession = {
     },
   ],
   activityLog: [],
-  updatedAt: new Date().toISOString(),
+  updatedAt: '2026-01-01T00:00:00.000Z',
 };

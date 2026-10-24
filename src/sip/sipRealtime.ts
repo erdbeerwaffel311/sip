@@ -57,6 +57,38 @@ class SipRealtimeService {
 
   private hasLoadedCloudSession = false;
   private cachedSettings: AppSettings | null = null;
+  private lastLocalMutationAt = 0;
+
+  private toCompactSession(session: SipSession): SipSession {
+    const compactAntraege = (session.antraege || [])
+      .filter((a) => !a.isPreFab || a.claimedBy || a.isActive || a.id === session.activeAntragId || a.isEditedByAdmin)
+      .map((a) => {
+        if (a.isPreFab && !a.isEditedByAdmin) {
+          return {
+            id: a.id,
+            type: a.type,
+            title: a.title,
+            author: a.author,
+            parentAntragId: a.parentAntragId,
+            isPreFab: true,
+            status: a.status,
+            claimedBy: a.claimedBy || null,
+            claimedAt: a.claimedAt || null,
+            isActive: a.isActive ?? false,
+            createdAt: a.createdAt,
+            content: '',
+          } as SipAntrag;
+        }
+        return a;
+      });
+
+    return {
+      ...session,
+      strategyNotes: '',
+      antraege: compactAntraege,
+      activityLog: (session.activityLog || []).slice(0, 30),
+    };
+  }
 
   private mergeWithFreshPreFabs(session: Partial<SipSession>): SipSession {
     let activeId = session.activeAntragId !== undefined ? session.activeAntragId : null;
@@ -109,6 +141,14 @@ class SipRealtimeService {
 
   private applyCloudSession(cloudSession: SipSession) {
     if (!cloudSession) return;
+    if (
+      this.hasLoadedCloudSession &&
+      cloudSession.updatedAt &&
+      this.currentSession.updatedAt &&
+      cloudSession.updatedAt < this.currentSession.updatedAt
+    ) {
+      return;
+    }
     const merged = this.mergeWithFreshPreFabs(cloudSession);
 
     const prevActiveId = this.currentSession.activeAntragId;
@@ -273,13 +313,20 @@ class SipRealtimeService {
       } catch {}
     }
 
-    // 2. Supabase Realtime Broadcast
+    // 2. Supabase Realtime Broadcast (mit kompaktem Payload falls STATE_SYNC um 64KB Limit einzuhalten)
     if (this.supabaseChannel) {
       try {
+        let payloadToSend = msg;
+        if (msg.type === 'STATE_SYNC' && msg.session) {
+          payloadToSend = {
+            type: 'STATE_SYNC',
+            session: this.toCompactSession(msg.session),
+          };
+        }
         this.supabaseChannel.send({
           type: 'broadcast',
           event: 'sip_event',
-          payload: msg,
+          payload: payloadToSend,
         });
       } catch {}
     }
@@ -448,6 +495,7 @@ class SipRealtimeService {
    * Strategieführung ruft einen neuen Antrag auf (ploppt auf allen Geräten auf!)
    */
   public async activateAntrag(antragId: string, settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
     const antrag = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!antrag) return;
 
@@ -508,6 +556,7 @@ class SipRealtimeService {
    * Strategieführung beendet den aktuellen Aufruf (Pause / Zwischenabstimmung)
    */
   public async clearActiveAntrag(settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
     this.logActivity({
       action: 'ANTRAG_CLEARED',
       performedBy: 'Strategieführung',
@@ -541,6 +590,7 @@ class SipRealtimeService {
     rec: Omit<VoteRecommendation, 'updatedAt'>,
     settings?: AppSettings
   ) {
+    this.lastLocalMutationAt = Date.now();
     const fullRec: VoteRecommendation = {
       ...rec,
       isPublished: rec.isPublished ?? true,
@@ -582,6 +632,7 @@ class SipRealtimeService {
    * Ein Mitglied oder die Strategieführung claimt einen Antrag
    */
   public claimAntrag(antragId: string, memberName: string, settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!target) return;
 
@@ -627,6 +678,7 @@ class SipRealtimeService {
    * Claim zurückziehen
    */
   public unclaimAntrag(antragId: string, memberName: string, settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
     if (!target) return;
 
@@ -664,6 +716,7 @@ class SipRealtimeService {
     antragData: Omit<SipAntrag, 'id' | 'isPreFab' | 'status' | 'createdAt'>,
     settings?: AppSettings
   ): SipAntrag {
+    this.lastLocalMutationAt = Date.now();
     const newAntrag: SipAntrag = {
       ...antragData,
       id: `antrag_custom_${Date.now()}`,
@@ -707,6 +760,7 @@ class SipRealtimeService {
     updates: Partial<SipAntrag>,
     settings?: AppSettings
   ) {
+    this.lastLocalMutationAt = Date.now();
     let updatedObj: SipAntrag | null = null;
     this.currentSession = {
       ...this.currentSession,
@@ -749,6 +803,7 @@ class SipRealtimeService {
    * Löscht einen Antrag
    */
   public deleteAntrag(antragId: string, settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
     if (target) {
       this.logActivity({
@@ -779,6 +834,7 @@ class SipRealtimeService {
    * Archiviert die aktuelle Sitzung und startet ein neues SiP
    */
   public async startNewSession(newTitle: string, settings?: AppSettings): Promise<void> {
+    this.lastLocalMutationAt = Date.now();
     const oldSession = { ...this.currentSession };
     await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
 
@@ -933,6 +989,12 @@ class SipRealtimeService {
   // --- SUPABASE PERSISTENCE ---
 
   private async fetchFromSupabase(settings?: AppSettings) {
+    // Guard: Wenn vor weniger als 3.5 Sekunden eine lokale Aktion durchgeführt wurde,
+    // überspringe den Polling-Fetch, um In-Flight-Race-Conditions zu verhindern
+    if (Date.now() - this.lastLocalMutationAt < 3500) {
+      return;
+    }
+
     const client = getSupabaseClient(settings || this.cachedSettings || undefined);
     if (!client) return;
 
@@ -946,6 +1008,14 @@ class SipRealtimeService {
 
       if (!error && data && data.payload) {
         const cloudSession = data.payload as SipSession;
+        if (
+          this.hasLoadedCloudSession &&
+          cloudSession.updatedAt &&
+          this.currentSession.updatedAt &&
+          cloudSession.updatedAt < this.currentSession.updatedAt
+        ) {
+          return;
+        }
         this.applyCloudSession(cloudSession);
       }
     } catch (err) {
@@ -957,7 +1027,7 @@ class SipRealtimeService {
     const client = getSupabaseClient(settings || this.cachedSettings || undefined);
     if (!client) return;
 
-    const sess = session || this.currentSession;
+    const sess = this.toCompactSession(session || this.currentSession);
     try {
       const { error } = await client.from('keller_items').upsert({
         id: SIP_DB_ROW_ID,

@@ -942,36 +942,16 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       {activeAntrag.title}
                     </h2>
 
-                    {/* Konkrete Forderungspunkte des Hauptantrags */}
-                    {activeAntrag.forderungspunkte && activeAntrag.forderungspunkte.length > 0 && (
-                      <div className="bg-gradient-to-r from-sky-950/50 via-slate-900 to-indigo-950/40 border border-sky-500/40 rounded-2xl p-4 sm:p-5 mb-5 shadow-lg">
-                        <div className="flex items-center gap-2 text-sm font-bold text-sky-300 mb-3">
-                          <Target className="w-4 h-4 text-sky-400" />
-                          <span>Konkrete Forderungen des Hauptantrags ({activeAntrag.forderungspunkte.length}):</span>
+                    {/* Vorbereitete Rede / Antragstext (Standardmäßig auf 2 Zeilen eingeklappt) */}
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 shadow-inner">
+                      <div className="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-800">
+                        <div className="flex items-center gap-2">
+                          <Mic className="w-4 h-4 text-indigo-400" />
+                          <h3 className="text-xs sm:text-sm font-bold text-indigo-300">
+                            {activeAntrag.rede ? `Vorbereitete Rede für das Plenum (${activeAntrag.author})` : 'Antragstext'}
+                          </h3>
                         </div>
-                        <ul className="space-y-2.5">
-                          {activeAntrag.forderungspunkte.map((fp, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-slate-100">
-                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/40">
-                                {idx + 1}
-                              </span>
-                              <span className="leading-relaxed font-medium">{fp}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Vorbereitete Rede aus den SiP-Unterlagen */}
-                    {activeAntrag.rede ? (
-                      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 shadow-inner">
-                        <div className="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-800">
-                          <div className="flex items-center gap-2">
-                            <Mic className="w-4 h-4 text-indigo-400" />
-                            <h3 className="text-xs sm:text-sm font-bold text-indigo-300">
-                              Vorbereitete Rede für das Plenum ({activeAntrag.author})
-                            </h3>
-                          </div>
+                        {isHeroTextExpanded && activeAntrag.rede && (
                           <button
                             type="button"
                             onClick={() => {
@@ -994,68 +974,68 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                               </>
                             )}
                           </button>
-                        </div>
-                        <div className={`text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans ${isHeroTextExpanded ? '' : 'line-clamp-2'}`}>
-                          {activeAntrag.rede}
-                        </div>
-                        {(activeAntrag.rede.length > 120 || activeAntrag.rede.includes('\n')) && (
-                          <button
-                            type="button"
-                            onClick={() => setIsHeroTextExpanded(!isHeroTextExpanded)}
-                            className="mt-2.5 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition"
-                          >
-                            {isHeroTextExpanded ? (
-                              <>
-                                <ChevronUp className="w-3.5 h-3.5" />
-                                <span>Weniger anzeigen</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-3.5 h-3.5" />
-                                <span>Ganzen Redetext anzeigen</span>
-                              </>
-                            )}
-                          </button>
                         )}
                       </div>
-                    ) : (
-                      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans shadow-inner">
-                        <div className={`${isHeroTextExpanded ? '' : 'line-clamp-2'}`}>
-                          {activeAntrag.content}
-                        </div>
-                        {(activeAntrag.content.length > 120 || activeAntrag.content.includes('\n')) && (
-                          <button
-                            type="button"
-                            onClick={() => setIsHeroTextExpanded(!isHeroTextExpanded)}
-                            className="mt-2.5 text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer transition"
-                          >
-                            {isHeroTextExpanded ? (
-                              <>
-                                <ChevronUp className="w-3.5 h-3.5" />
-                                <span>Weniger anzeigen</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-3.5 h-3.5" />
-                                <span>Ganzen Antragstext anzeigen</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    )}
 
-                    {/* Bildungsdirektion / Admin Notes if present */}
-                    {activeAntrag.adminNotes && (
-                      <div className="mb-5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs sm:text-sm text-amber-200">
-                        <span className="font-bold block text-amber-300 mb-1">
-                          🏛️ Stellungnahme & Erläuterung der Bildungsdirektion:
-                        </span>
-                        <p className="leading-relaxed whitespace-pre-wrap">
-                          {activeAntrag.adminNotes}
-                        </p>
+                      {/* 2-Zeilen Preview wenn eingeklappt */}
+                      <div className={`text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans ${isHeroTextExpanded ? '' : 'line-clamp-2'}`}>
+                        {activeAntrag.rede || activeAntrag.content}
                       </div>
-                    )}
+
+                      {/* Aufklappen / Einklappen Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => setIsHeroTextExpanded(!isHeroTextExpanded)}
+                        className="mt-3 text-xs font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1.5 cursor-pointer transition"
+                      >
+                        {isHeroTextExpanded ? (
+                          <>
+                            <ChevronUp className="w-4 h-4" />
+                            <span>Weniger anzeigen (Einklappen)</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            <span>Ganzen Antragstext & Forderungen anzeigen (Aufklappen)</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Vollständige Forderungspunkte & Bildungsdirektion nur wenn aufgeklappt */}
+                      {isHeroTextExpanded && (
+                        <div className="mt-4 pt-4 border-t border-slate-800 space-y-4 animate-in fade-in">
+                          {activeAntrag.forderungspunkte && activeAntrag.forderungspunkte.length > 0 && (
+                            <div className="bg-gradient-to-r from-sky-950/50 via-slate-900 to-indigo-950/40 border border-sky-500/40 rounded-2xl p-4 sm:p-5 shadow-lg">
+                              <div className="flex items-center gap-2 text-sm font-bold text-sky-300 mb-3">
+                                <Target className="w-4 h-4 text-sky-400" />
+                                <span>Konkrete Forderungen des Hauptantrags ({activeAntrag.forderungspunkte.length}):</span>
+                              </div>
+                              <ul className="space-y-2.5">
+                                {activeAntrag.forderungspunkte.map((fp, idx) => (
+                                  <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-slate-100">
+                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/40">
+                                      {idx + 1}
+                                    </span>
+                                    <span className="leading-relaxed font-medium">{fp}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {activeAntrag.adminNotes && (
+                            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs sm:text-sm text-amber-200">
+                              <span className="font-bold block text-amber-300 mb-1">
+                                🏛️ Stellungnahme & Erläuterung der Bildungsdirektion:
+                              </span>
+                              <p className="leading-relaxed whitespace-pre-wrap">
+                                {activeAntrag.adminNotes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Redezeit / Claiming Section */}
                     <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">

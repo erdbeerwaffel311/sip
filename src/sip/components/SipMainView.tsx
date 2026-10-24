@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Gavel,
   Target,
@@ -63,6 +63,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     () => isAdminUnlocked || currentMember?.role === 'strategie' || currentMember?.role === 'admin'
   );
 
+  const isStrategieLeaderRef = useRef(isStrategieLeader);
+  useEffect(() => {
+    isStrategieLeaderRef.current = isStrategieLeader;
+  }, [isStrategieLeader]);
+
   // Modals & Popups
   const [activeBlurAntrag, setActiveBlurAntrag] = useState<SipAntrag | null>(null);
   const [confirmActivateAntrag, setConfirmActivateAntrag] = useState<SipAntrag | null>(null);
@@ -94,7 +99,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     });
 
     const unsubBlur = sipRealtime.onBlurPopup((antrag) => {
-      setActiveBlurAntrag(antrag);
+      // WICHTIG: Das Blurry Overlay soll NUR auf den Bildschirmen der Mitglieder aufploppen,
+      // NIEMALS auf dem Bildschirm der Strategieführung!
+      if (!isStrategieLeaderRef.current) {
+        setActiveBlurAntrag(antrag);
+      }
     });
 
     const unsubNotif = sipRealtime.onNotification((notif) => {
@@ -266,8 +275,8 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         </div>
       )}
 
-      {/* Blurry Screen Modal for New Motions */}
-      {activeBlurAntrag && (
+      {/* Blurry Screen Modal: NUR für Mitglieder-Accounts, NIEMALS für die Strategieführung */}
+      {activeBlurAntrag && !isStrategieLeader && (
         <BlurryMotionModal
           antrag={activeBlurAntrag}
           onViewNow={() => {
@@ -352,7 +361,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                   const target = confirmActivateAntrag;
                   setConfirmActivateAntrag(null);
                   handleActivateAntrag(target.id);
-                  setActiveBlurAntrag(target);
+                  // Kein Blur-Overlay für Strategieführung!
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-sky-500/25 transition cursor-pointer"
               >

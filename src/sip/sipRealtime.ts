@@ -34,6 +34,8 @@ class SipRealtimeService {
   private activeBlurPopupListeners: Set<(antrag: SipAntrag) => void> = new Set();
   private isInitialized = false;
 
+  private syncInterval: any = null;
+
   constructor() {
     this.initLocalChannel();
   }
@@ -52,14 +54,23 @@ class SipRealtimeService {
   }
 
   private mergeWithFreshPreFabs(session: SipSession): SipSession {
-    const customAntraege = (session.antraege || []).filter((a) => !a.isPreFab);
+    let activeId = session.activeAntragId;
+    if (activeId && activeId.includes('antrag_top_')) {
+      activeId = activeId.replace('antrag_top_', 'antrag_');
+    }
+
+    const customAntraege = (session.antraege || [])
+      .filter((a) => !a.isPreFab)
+      .map((a) => (a.id.includes('antrag_top_') ? { ...a, id: a.id.replace('antrag_top_', 'antrag_') } : a));
+
     const existingClaims = new Map<
       string,
       { claimedBy: string | null; claimedAt: string | null; isActive?: boolean }
     >();
     (session.antraege || []).forEach((a) => {
+      const cleanId = a.id.replace('antrag_top_', 'antrag_');
       if (a.claimedBy || a.isActive) {
-        existingClaims.set(a.id, {
+        existingClaims.set(cleanId, {
           claimedBy: a.claimedBy || null,
           claimedAt: a.claimedAt || null,
           isActive: a.isActive,
@@ -69,20 +80,49 @@ class SipRealtimeService {
 
     const refreshedPreFabs = DEFAULT_SIP_SESSION.antraege.map((fresh) => {
       const claim = existingClaims.get(fresh.id);
-      return claim
-        ? {
-            ...fresh,
-            claimedBy: claim.claimedBy,
-            claimedAt: claim.claimedAt,
-            isActive: claim.isActive ?? fresh.isActive,
-          }
-        : fresh;
+      const isCurrentlyActive = activeId ? fresh.id === activeId : (claim?.isActive ?? fresh.isActive);
+      return {
+        ...fresh,
+        claimedBy: claim ? claim.claimedBy : fresh.claimedBy,
+        claimedAt: claim ? claim.claimedAt : fresh.claimedAt,
+        isActive: isCurrentlyActive,
+      };
     });
 
     return {
       ...session,
+      activeAntragId: activeId,
       antraege: [...refreshedPreFabs, ...customAntraege],
     };
+  }
+
+  private applyCloudSession(cloudSession: SipSession) {
+    if (!cloudSession) return;
+    const merged = this.mergeWithFreshPreFabs(cloudSession);
+
+    const prevActiveId = this.currentSession.activeAntragId;
+    const newActiveId = merged.activeAntragId;
+    const isNewActive = Boolean(newActiveId && newActiveId !== prevActiveId);
+
+    if (isNewActive || !this.currentSession || merged.updatedAt >= this.currentSession.updatedAt) {
+      this.currentSession = merged;
+      this.notify();
+
+      if (isNewActive && newActiveId) {
+        const newlyActiveAntrag = merged.antraege.find((a) => a.id === newActiveId);
+        if (newlyActiveAntrag) {
+          this.triggerBlurPopup(newlyActiveAntrag);
+          this.triggerNotification({
+            id: `notif_${Date.now()}`,
+            title: '🚨 Neuer Antrag aufgerufen!',
+            message: `${newlyActiveAntrag.title} wird jetzt im Parlament verhandelt.`,
+            type: 'motion',
+            timestamp: new Date().toISOString(),
+            antragId: newlyActiveAntrag.id,
+          });
+        }
+      }
+    }
   }
 
   public init(settings: AppSettings) {
@@ -105,6 +145,14 @@ class SipRealtimeService {
 
     // Versuche neuesten Stand aus Supabase abzurufen
     this.fetchFromSupabase(settings).catch(() => {});
+
+    // Schneller Sync-Takt alle 2 Sekunden zur garantierten Ausfallsicherheit
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+    }
+    this.syncInterval = setInterval(() => {
+      this.fetchFromSupabase(settings).catch(() => {});
+    }, 2000);
   }
 
   public setupSupabase(settings: AppSettings) {
@@ -126,9 +174,24 @@ class SipRealtimeService {
             this.handleIncomingMessage(payload.payload as SipRealtimeMessage);
           }
         })
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'keller_items',
+            filter: `id=eq.${SIP_DB_ROW_ID}`,
+          },
+          (payload) => {
+            if (payload && payload.new && (payload.new as any).payload) {
+              const cloudSession = (payload.new as any).payload as SipSession;
+              this.applyCloudSession(cloudSession);
+            }
+          }
+        )
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            // Nach erfolgreichem Join Zustand teilen
+            console.log('[SiP Realtime] Connected to live channel');
           }
         });
     } catch (err) {
@@ -219,16 +282,25 @@ class SipRealtimeService {
 
     switch (msg.type) {
       case 'STATE_SYNC':
-        if (msg.session && msg.session.updatedAt > this.currentSession.updatedAt) {
-          this.currentSession = msg.session;
-          this.notify();
+        if (msg.session && (!this.currentSession || msg.session.updatedAt >= this.currentSession.updatedAt)) {
+          this.applyCloudSession(msg.session);
         }
         break;
 
       case 'NEW_ACTIVE_ANTRAG': {
+        const targetAntrag =
+          this.currentSession.antraege.find((a) => a.id === msg.antragId) || msg.antrag;
+
         this.currentSession = {
           ...this.currentSession,
           activeAntragId: msg.antragId,
+          voteRecommendation: {
+            type: 'KEINE',
+            note: '',
+            updatedAt: new Date().toISOString(),
+            updatedBy: 'Strategieführung',
+            isPublished: false,
+          },
           antraege: this.currentSession.antraege.map((a) => ({
             ...a,
             isActive: a.id === msg.antragId,
@@ -236,11 +308,11 @@ class SipRealtimeService {
           updatedAt: new Date().toISOString(),
         };
         this.notify();
-        this.triggerBlurPopup(msg.antrag);
+        this.triggerBlurPopup(targetAntrag);
         this.triggerNotification({
           id: `notif_${Date.now()}`,
           title: '🚨 Neuer Antrag aufgerufen!',
-          message: `${msg.antrag.title} wird jetzt im Parlament verhandelt.`,
+          message: `${targetAntrag.title} wird jetzt im Parlament verhandelt.`,
           type: 'motion',
           timestamp: new Date().toISOString(),
           antragId: msg.antragId,
@@ -379,6 +451,12 @@ class SipRealtimeService {
       antrag,
     };
     this.broadcastMessage(msg, settings);
+
+    const stateMsg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(stateMsg, settings);
   }
 
   /**
@@ -725,10 +803,7 @@ class SipRealtimeService {
 
       if (!error && data && data.payload) {
         const cloudSession = data.payload as SipSession;
-        if (cloudSession && (!this.currentSession || cloudSession.updatedAt >= this.currentSession.updatedAt)) {
-          this.currentSession = this.mergeWithFreshPreFabs(cloudSession);
-          this.notify();
-        }
+        this.applyCloudSession(cloudSession);
       }
     } catch (err) {
       console.warn('Could not fetch SiP session from Supabase:', err);

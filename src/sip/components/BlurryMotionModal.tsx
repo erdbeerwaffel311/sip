@@ -84,9 +84,21 @@ export const BlurryMotionModal: React.FC<BlurryMotionModalProps> = ({
               {antrag.title}
             </h3>
 
-            <p className="text-xs text-slate-400 line-clamp-3 italic">
-              "{antrag.content}"
-            </p>
+            {antrag.forderungspunkte && antrag.forderungspunkte.length > 0 ? (
+              <div className="mb-2">
+                <span className="text-[11px] font-bold text-sky-400 block mb-1">
+                  🎯 {antrag.forderungspunkte.length} konkrete Forderungspunkte:
+                </span>
+                <p className="text-xs text-slate-300 line-clamp-2">
+                  • {antrag.forderungspunkte[0]}
+                  {antrag.forderungspunkte.length > 1 ? ` (+ ${antrag.forderungspunkte.length - 1} weitere)` : ''}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 line-clamp-3 italic">
+                "{antrag.content}"
+              </p>
+            )}
 
             {antrag.claimedBy && (
               <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center gap-1.5 text-xs text-emerald-400 font-medium">

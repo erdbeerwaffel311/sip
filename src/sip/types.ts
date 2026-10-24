@@ -1,6 +1,7 @@
 import { REAL_SIP_ANTRAEGE, REAL_SIP_STRATEGY_NOTES } from './realSipData';
 
 export type AntragType =
+  | 'HAUPTANTRAG' // Hauptantrag (Beschlussantrag im Plenum)
   | 'WM' // Wortmeldung
   | 'AAA' // Abänderungsantrag (ÄA)
   | 'EA' // Erweiterungsantrag
@@ -24,7 +25,9 @@ export interface SipAntrag {
   type: AntragType;
   title: string;
   content: string;
-  lineOrParagraph?: string; // z.B. "Zeile 45-48" oder "§ 3 Abs. 2"
+  rede?: string; // Vorbereitete Rede aus den SiP-Unterlagen
+  forderungspunkte?: string[]; // Konkrete Forderungspunkte des Antrags
+  lineOrParagraph?: string; // z.B. "Antrag 1" oder "Zeile 45-48"
   author: string;
   isPreFab: boolean; // Vorgefertigt aus Dokument vs. selbst eingereicht
   status: 'pending_approval' | 'approved' | 'rejected' | 'completed';
@@ -77,6 +80,12 @@ export const ANTRAG_TYPE_CONFIG: Record<
   AntragType,
   { label: string; shortLabel: string; badgeColor: string; description: string }
 > = {
+  HAUPTANTRAG: {
+    label: 'Hauptantrag',
+    shortLabel: 'Hauptantrag',
+    badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+    description: 'Offizieller Hauptantrag / Beschlussantrag im Plenum',
+  },
   WM: {
     label: 'Wortmeldung',
     shortLabel: 'WM',

@@ -51,6 +51,40 @@ class SipRealtimeService {
     }
   }
 
+  private mergeWithFreshPreFabs(session: SipSession): SipSession {
+    const customAntraege = (session.antraege || []).filter((a) => !a.isPreFab);
+    const existingClaims = new Map<
+      string,
+      { claimedBy: string | null; claimedAt: string | null; isActive?: boolean }
+    >();
+    (session.antraege || []).forEach((a) => {
+      if (a.claimedBy || a.isActive) {
+        existingClaims.set(a.id, {
+          claimedBy: a.claimedBy || null,
+          claimedAt: a.claimedAt || null,
+          isActive: a.isActive,
+        });
+      }
+    });
+
+    const refreshedPreFabs = DEFAULT_SIP_SESSION.antraege.map((fresh) => {
+      const claim = existingClaims.get(fresh.id);
+      return claim
+        ? {
+            ...fresh,
+            claimedBy: claim.claimedBy,
+            claimedAt: claim.claimedAt,
+            isActive: claim.isActive ?? fresh.isActive,
+          }
+        : fresh;
+    });
+
+    return {
+      ...session,
+      antraege: [...refreshedPreFabs, ...customAntraege],
+    };
+  }
+
   public init(settings: AppSettings) {
     if (this.isInitialized) return;
     this.isInitialized = true;
@@ -59,7 +93,8 @@ class SipRealtimeService {
     try {
       const saved = localStorage.getItem(SIP_STORAGE_KEY);
       if (saved) {
-        this.currentSession = { ...DEFAULT_SIP_SESSION, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        this.currentSession = this.mergeWithFreshPreFabs({ ...DEFAULT_SIP_SESSION, ...parsed });
       }
     } catch {
       this.currentSession = DEFAULT_SIP_SESSION;
@@ -691,7 +726,7 @@ class SipRealtimeService {
       if (!error && data && data.payload) {
         const cloudSession = data.payload as SipSession;
         if (cloudSession && (!this.currentSession || cloudSession.updatedAt >= this.currentSession.updatedAt)) {
-          this.currentSession = cloudSession;
+          this.currentSession = this.mergeWithFreshPreFabs(cloudSession);
           this.notify();
         }
       }

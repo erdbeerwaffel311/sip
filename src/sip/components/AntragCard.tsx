@@ -12,6 +12,10 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Target,
+  Mic,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
 
@@ -41,6 +45,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
   onReject,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [hasCopiedRede, setHasCopiedRede] = useState(false);
   const typeConfig = ANTRAG_TYPE_CONFIG[antrag.type] || ANTRAG_TYPE_CONFIG.SONSTIGES;
   const isClaimedByMe = antrag.claimedBy === currentUserName;
   const isPending = antrag.status === 'pending_approval';
@@ -157,12 +162,75 @@ export const AntragCard: React.FC<AntragCardProps> = ({
             {antrag.title}
           </h3>
 
-          {/* Full Content / Text - Always fully visible */}
-          <div className="bg-slate-950/60 p-3 sm:p-4 rounded-xl border border-slate-800/80 mb-2">
-            <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
-              {antrag.content}
-            </p>
-          </div>
+          {/* Forderungspunkte if present */}
+          {antrag.forderungspunkte && antrag.forderungspunkte.length > 0 && (
+            <div className="bg-sky-950/40 border border-sky-500/30 rounded-xl p-3 sm:p-3.5 mb-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300 mb-2">
+                <Target className="w-3.5 h-3.5 text-sky-400" />
+                <span>Konkrete Forderungen ({antrag.forderungspunkte.length}):</span>
+              </div>
+              <ul className="space-y-1.5">
+                {antrag.forderungspunkte.map((f, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-xs sm:text-sm text-slate-200">
+                    <span className="text-sky-400 font-bold shrink-0 mt-0.5">•</span>
+                    <span className="leading-snug">{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Rede or General Content */}
+          {antrag.rede ? (
+            <div className="bg-slate-950/70 p-3 sm:p-4 rounded-xl border border-slate-800/80 mb-2">
+              <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-800">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300">
+                  <Mic className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Vorbereitete Rede ({antrag.author}):</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(antrag.rede || '');
+                    setHasCopiedRede(true);
+                    setTimeout(() => setHasCopiedRede(false), 2000);
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition cursor-pointer"
+                  title="Redetext kopieren"
+                >
+                  {hasCopiedRede ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400">Kopiert!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Rede kopieren</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+                {antrag.rede}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-slate-950/60 p-3 sm:p-4 rounded-xl border border-slate-800/80 mb-2">
+              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans">
+                {antrag.content}
+              </p>
+            </div>
+          )}
+
+          {/* Admin / BD Notes if present */}
+          {antrag.adminNotes && (
+            <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200">
+              <span className="font-bold text-amber-300 block mb-0.5">🏛️ Stellungnahme Bildungsdirektion Vorarlberg:</span>
+              <p className="whitespace-pre-wrap leading-relaxed">{antrag.adminNotes}</p>
+            </div>
+          )}
         </div>
 
         {/* Right / Bottom: Claim Status & Actions */}

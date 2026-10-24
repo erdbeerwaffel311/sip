@@ -21,6 +21,8 @@ import {
   UserX,
   Clock,
   XCircle,
+  Copy,
+  Mic,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -71,6 +73,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   } | null>(null);
   const [editingAntrag, setEditingAntrag] = useState<SipAntrag | null>(null);
   const [showParserModal, setShowParserModal] = useState(false);
+  const [hasCopiedHeroRede, setHasCopiedHeroRede] = useState(false);
 
   // Filter
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
@@ -817,9 +820,68 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       {activeAntrag.title}
                     </h2>
 
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans shadow-inner">
-                      {activeAntrag.content}
-                    </div>
+                    {/* Konkrete Forderungspunkte des Hauptantrags */}
+                    {activeAntrag.forderungspunkte && activeAntrag.forderungspunkte.length > 0 && (
+                      <div className="bg-gradient-to-r from-sky-950/50 via-slate-900 to-indigo-950/40 border border-sky-500/40 rounded-2xl p-4 sm:p-5 mb-5 shadow-lg">
+                        <div className="flex items-center gap-2 text-sm font-bold text-sky-300 mb-3">
+                          <Target className="w-4 h-4 text-sky-400" />
+                          <span>Konkrete Forderungen des Hauptantrags ({activeAntrag.forderungspunkte.length}):</span>
+                        </div>
+                        <ul className="space-y-2.5">
+                          {activeAntrag.forderungspunkte.map((fp, idx) => (
+                            <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-slate-100">
+                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/40">
+                                {idx + 1}
+                              </span>
+                              <span className="leading-relaxed font-medium">{fp}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Vorbereitete Rede aus den SiP-Unterlagen */}
+                    {activeAntrag.rede ? (
+                      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 shadow-inner">
+                        <div className="flex items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <Mic className="w-4 h-4 text-indigo-400" />
+                            <h3 className="text-xs sm:text-sm font-bold text-indigo-300">
+                              Vorbereitete Rede für das Plenum ({activeAntrag.author})
+                            </h3>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(activeAntrag.rede || '');
+                              setHasCopiedHeroRede(true);
+                              setTimeout(() => setHasCopiedHeroRede(false), 2000);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition cursor-pointer"
+                            title="Redetext in Zwischenablage kopieren"
+                          >
+                            {hasCopiedHeroRede ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                <span className="text-emerald-400">Rede kopiert!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Rede kopieren</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="text-slate-200 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                          {activeAntrag.rede}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans shadow-inner">
+                        {activeAntrag.content}
+                      </div>
+                    )}
 
                     {/* Bildungsdirektion / Admin Notes if present */}
                     {activeAntrag.adminNotes && (

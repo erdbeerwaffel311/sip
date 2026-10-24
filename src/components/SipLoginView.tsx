@@ -61,21 +61,30 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
 
     // Direkt-Login als Strategieführung (Admin-Passwort)
     if (
-      (rawUser.toLowerCase() === 'admin' ||
-        rawUser.toLowerCase() === 'strategieführung' ||
-        rawUser.toLowerCase() === 'leitung') &&
-      (rawPass === adminPassword || rawPass === 'admin' || rawPass === 'strategie2026')
+      rawUser.toLowerCase() === 'admin' ||
+      rawUser.toLowerCase() === 'strategieführung' ||
+      rawUser.toLowerCase() === 'leitung'
     ) {
-      onLoginSuccess(
-        {
-          name: 'Strategieführung',
-          username: 'strategie@schuelerunion.at',
-          password: rawPass,
-          role: 'strategie',
-        },
-        true
-      );
-      return;
+      if (rawPass === 'admin') {
+        setErrorMsg("Das Passwort 'admin' ist nicht mehr gültig. Bitte verwende das neue Strategie-Passwort.");
+        return;
+      }
+
+      const effectiveAdminPassword =
+        adminPassword && adminPassword !== 'admin' ? adminPassword : 'strategie2026';
+
+      if (rawPass === effectiveAdminPassword || rawPass === 'strategie2026') {
+        onLoginSuccess(
+          {
+            name: 'Strategieführung',
+            username: 'strategie@schuelerunion.at',
+            password: rawPass,
+            role: 'strategie',
+          },
+          true
+        );
+        return;
+      }
     }
 
     const withDomain = rawUser.includes('@') ? rawUser : `${rawUser}@schuelerunion.at`;

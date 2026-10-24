@@ -33,7 +33,10 @@ export const App: React.FC = () => {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        return { ...DEFAULT_SIP_SETTINGS, ...parsed };
+        if (parsed.adminPassword === 'admin' || !parsed.adminPassword) {
+          parsed.adminPassword = 'strategie2026';
+        }
+        return { ...DEFAULT_SIP_SETTINGS, ...parsed, adminPassword: parsed.adminPassword };
       }
     } catch {}
     return DEFAULT_SIP_SETTINGS;
@@ -158,40 +161,22 @@ export const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             {/* View Switch: Parlament vs. Admin-Bereich */}
-            <button
-              type="button"
-              onClick={() => {
-                if (isAdminUnlocked || currentUser.role === 'strategie') {
-                  setCurrentView(currentView === 'admin' ? 'parliament' : 'admin');
-                } else {
-                  const pass = window.prompt('Admin-Passwort für den Admin- & Gästebereich eingeben:');
-                  if (pass === settings.adminPassword || pass === 'admin' || pass === 'strategie2026') {
-                    setIsAdminUnlocked(true);
-                    localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-                    setCurrentView('admin');
-                  } else if (pass !== null) {
-                    alert('Falsches Admin-Passwort.');
-                  }
+            {(isAdminUnlocked || currentUser.role === 'strategie') && (
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentView(currentView === 'admin' ? 'parliament' : 'admin')
                 }
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
-                currentView === 'admin'
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
-                  : isAdminUnlocked || currentUser.role === 'strategie'
-                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
-                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-              }`}
-              title="Admin- und Gäste-Verwaltung"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>
-                {currentView === 'admin'
-                  ? 'Zum Parlament'
-                  : isAdminUnlocked || currentUser.role === 'strategie'
-                  ? 'Admin & Gäste'
-                  : 'Admin & Gäste'}
-              </span>
-            </button>
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
+                  currentView === 'admin'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                    : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>{currentView === 'admin' ? 'Zum Parlament' : 'Admin & Gäste'}</span>
+              </button>
+            )}
 
             {/* User badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-200">
@@ -231,15 +216,6 @@ export const App: React.FC = () => {
             settings={settings}
             currentMember={currentUser}
             isAdminUnlocked={isAdminUnlocked || currentUser.role === 'strategie'}
-            onUnlockAdmin={() => {
-              setIsAdminUnlocked(true);
-              localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-            }}
-            onOpenAdminView={() => {
-              setIsAdminUnlocked(true);
-              localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-              setCurrentView('admin');
-            }}
           />
         )}
       </main>

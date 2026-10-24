@@ -49,7 +49,9 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Settings form state
-  const [adminPasswordInput, setAdminPasswordInput] = useState(settings.adminPassword);
+  const [adminPasswordInput, setAdminPasswordInput] = useState(
+    settings.adminPassword === 'admin' ? 'strategie2026' : (settings.adminPassword || 'strategie2026')
+  );
   const [supabaseUrlInput, setSupabaseUrlInput] = useState(settings.supabaseUrl);
   const [supabaseKeyInput, setSupabaseKeyInput] = useState(settings.supabaseAnonKey);
 
@@ -167,9 +169,18 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
 
   function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
+    const cleanPass = adminPasswordInput.trim();
+    if (cleanPass === 'admin') {
+      alert("Das Passwort 'admin' ist aus Sicherheitsgründen nicht mehr erlaubt. Bitte wähle ein anderes Passwort.");
+      return;
+    }
+    if (!cleanPass) {
+      alert('Das Passwort darf nicht leer sein.');
+      return;
+    }
     onUpdateSettings({
       ...settings,
-      adminPassword: adminPasswordInput.trim(),
+      adminPassword: cleanPass,
       supabaseUrl: supabaseUrlInput.trim(),
       supabaseAnonKey: supabaseKeyInput.trim(),
     });

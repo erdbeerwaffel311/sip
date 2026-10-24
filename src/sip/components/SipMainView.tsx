@@ -41,8 +41,6 @@ interface SipMainViewProps {
   settings: AppSettings;
   currentMember: MemberAccount | null;
   isAdminUnlocked: boolean;
-  onUnlockAdmin?: () => void;
-  onOpenAdminView?: () => void;
 }
 
 export type SipSubTab = 'antraege' | 'strategy' | 'drive' | 'memes';
@@ -51,8 +49,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   settings,
   currentMember,
   isAdminUnlocked,
-  onUnlockAdmin,
-  onOpenAdminView,
 }) => {
   const [session, setSession] = useState<SipSession>(() => sipRealtime.getSession());
   const [currentSubTab, setCurrentSubTab] = useState<SipSubTab>('antraege');
@@ -329,9 +325,14 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             onClick={() => {
               if (!isStrategieLeader && !isAdminUnlocked) {
                 const pass = prompt('Bitte Passwort für die Strategieführung (Admin) eingeben:');
-                if (pass === settings.adminPassword || pass === 'admin' || pass === 'strategie2026') {
+                const validAdminPass =
+                  settings.adminPassword && settings.adminPassword !== 'admin'
+                    ? settings.adminPassword
+                    : 'strategie2026';
+                if (pass === 'admin') {
+                  alert("Das Passwort 'admin' ist nicht mehr gültig.");
+                } else if (pass !== null && (pass === validAdminPass || pass === 'strategie2026')) {
                   setIsStrategieLeader(true);
-                  onUnlockAdmin?.();
                 } else if (pass !== null) {
                   alert('Ungültiges Passwort für die Strategieführung.');
                 }
@@ -357,18 +358,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
               </>
             )}
           </button>
-
-          {/* Direktlink zur Admin- & Gäste-Verwaltung wenn Strategieführung aktiv */}
-          {isStrategieLeader && onOpenAdminView && (
-            <button
-              type="button"
-              onClick={onOpenAdminView}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-2xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 border border-amber-400 shadow-md transition cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Admin & Gäste öffnen</span>
-            </button>
-          )}
         </div>
       </div>
 

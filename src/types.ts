@@ -136,7 +136,7 @@ export function isAccountExpired(account: MemberAccount): boolean {
 
 export const DEFAULT_SIP_SETTINGS: AppSettings = {
   clubName: 'Schüler:innenparlament (SiP)',
-  adminPassword: 'admin',
+  adminPassword: 'strategie2026',
   adminEmail: '',
   allowedMembers: DEFAULT_ALLOWED_MEMBERS,
   memberAccounts: DEFAULT_ALLOWED_MEMBERS.map((name) => ({

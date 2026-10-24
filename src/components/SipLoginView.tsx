@@ -227,9 +227,12 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
           </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
+        <div className="mt-6 pt-4 border-t border-slate-800/80 text-center space-y-2">
           <p className="text-[11px] text-slate-400 leading-relaxed">
             Zugangsdaten vergessen oder externer Gast? Wende dich an die <strong>Strategieführung</strong> im Plenum.
+          </p>
+          <p className="text-[11px] text-slate-500 font-medium">
+            © Elias Mathis
           </p>
         </div>
       </div>

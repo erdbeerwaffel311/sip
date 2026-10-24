@@ -8,14 +8,20 @@ import {
   Sparkles,
   Award,
   BookOpen,
+  UserCheck,
+  UserX,
+  CheckCircle2,
 } from 'lucide-react';
-import { SipAntrag } from '../types';
+import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
 
 interface StrategyNotesTabProps {
   strategyNotes: string;
   antraege: SipAntrag[];
   isStrategieLeader: boolean;
   onSaveNotes: (notes: string) => void;
+  currentUserName?: string;
+  onClaim?: (antragId: string) => void;
+  onUnclaim?: (antragId: string) => void;
 }
 
 export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
@@ -23,11 +29,15 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
   antraege,
   isStrategieLeader,
   onSaveNotes,
+  currentUserName = '',
+  onClaim,
+  onUnclaim,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(strategyNotes);
 
   const claimedAntraege = antraege.filter((a) => a.claimedBy);
+  const zusatzUndGoAntraege = antraege.filter((a) => a.type !== 'HAUPTANTRAG');
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -150,6 +160,94 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Zusatz- & GO-Anträge Block (ÄA, EA, SA, WM, Ende der Debatte, Ende der Rednerliste) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl text-white">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2.5 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
+              <span>Zusatz- & GO-Anträge zum Claimen</span>
+              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/30">
+                {zusatzUndGoAntraege.length}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              ÄA, EA, SA, WM, Antrag auf Ende der Debatte & Schluss der Redner:innenliste
+            </p>
+          </div>
+        </div>
+
+        {zusatzUndGoAntraege.length === 0 ? (
+          <div className="p-6 text-center rounded-2xl bg-slate-950/50 border border-slate-800 text-slate-400 text-xs">
+            Keine Zusatz- oder GO-Anträge vorhanden.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {zusatzUndGoAntraege.map((item) => {
+              const typeConf = ANTRAG_TYPE_CONFIG[item.type] || ANTRAG_TYPE_CONFIG.SONSTIGES;
+              const isClaimedByMe = item.claimedBy === currentUserName;
+              return (
+                <div
+                  key={item.id}
+                  className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col justify-between gap-3"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${typeConf.badgeColor}`}>
+                        {typeConf.shortLabel}
+                      </span>
+                      {item.claimedBy ? (
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold ${isClaimedByMe ? 'text-emerald-400' : 'text-indigo-400'}`}>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {isClaimedByMe ? 'Von dir geclaimed' : `👤 ${item.claimedBy}`}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-400 font-semibold italic">
+                          🟢 Noch frei
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-white mb-1">
+                      {item.title}
+                    </h4>
+                    <p className="text-xs text-slate-400 line-clamp-2">
+                      {item.content}
+                    </p>
+                  </div>
+
+                  {/* Claim Button */}
+                  {onClaim && onUnclaim && (
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end">
+                      {!item.claimedBy ? (
+                        <button
+                          type="button"
+                          onClick={() => onClaim(item.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow transition cursor-pointer"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                          <span>Redezeit claimen</span>
+                        </button>
+                      ) : isClaimedByMe || isStrategieLeader ? (
+                        <button
+                          type="button"
+                          onClick={() => onUnclaim(item.id)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs transition cursor-pointer"
+                        >
+                          <UserX className="w-3.5 h-3.5" />
+                          <span>Claim abgeben</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

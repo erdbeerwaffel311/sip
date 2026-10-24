@@ -166,6 +166,21 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     });
   }, [session.antraege, typeFilter, claimFilter, searchQuery, currentUserName]);
 
+  // 1. Hauptanträge im Plenum (nur Typ HAUPTANTRAG)
+  const hauptAntraege = useMemo(() => {
+    return filteredAntraege.filter((item) => item.type === 'HAUPTANTRAG');
+  }, [filteredAntraege]);
+
+  // 2. Zusatzanträge & GO-Anträge (ÄA, EA, SA, WM, Ende der Debatte, Ende der Redner:innenliste)
+  const zusatzUndGoAntraege = useMemo(() => {
+    return filteredAntraege.filter((item) => item.type !== 'HAUPTANTRAG');
+  }, [filteredAntraege]);
+
+  // Für Mitglieder: Alle claimbaren Zusatz- und GO-Anträge (die nicht abgelehnt sind)
+  const memberClaimableZusatzAntraege = useMemo(() => {
+    return session.antraege.filter((item) => item.type !== 'HAUPTANTRAG' && item.status !== 'rejected');
+  }, [session.antraege]);
+
   // Zähler für Anträge zur Prüfung
   const pendingCount = useMemo(() => {
     return session.antraege.filter((a) => a.status === 'pending_approval').length;
@@ -791,18 +806,71 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                 </span>
               </div>
 
-              {/* Motion Cards List Untereinander */}
+              {/* ========================================================================= */}
+              {/* 1. SEPARATER BLOCK: ZUSATZ- & GO-ANTRÄGE (ÄA, EA, SA, WM, GO)             */}
+              {/* ========================================================================= */}
+              {zusatzUndGoAntraege.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-950/30 via-slate-900 to-indigo-950/30 border-2 border-purple-500/40 rounded-3xl p-4 sm:p-6 shadow-xl space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                          <span>Zusatzanträge & GO-Anträge zum Claimen</span>
+                          <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
+                            {zusatzUndGoAntraege.length}
+                          </span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          ÄA, EA, SA, WM, Antrag auf Ende der Debatte & Schluss der Redner:innenliste
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {zusatzUndGoAntraege.map((antrag) => (
+                      <AntragCard
+                        key={antrag.id}
+                        antrag={antrag}
+                        currentUserName={currentUserName}
+                        isStrategieLeader={true}
+                        onClaim={handleClaimAntrag}
+                        onUnclaim={handleUnclaimAntrag}
+                        onActivate={(a) => setConfirmActivateAntrag(a)}
+                        onEdit={(a) => setEditingAntrag(a)}
+                        onDelete={handleDeleteAntrag}
+                        onApprove={handleApproveAntrag}
+                        onReject={handleRejectAntrag}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* 2. HAUPTANTRÄGE BLOCK (Antrag 1 bis Antrag 33)                              */}
+              {/* ========================================================================= */}
               <div className="space-y-3.5">
-                {filteredAntraege.length === 0 ? (
+                <div className="flex items-center justify-between px-1 pt-1">
+                  <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                    <Gavel className="w-4 h-4 text-sky-400" />
+                    <span>Hauptanträge im Plenum ({hauptAntraege.length})</span>
+                  </h3>
+                </div>
+
+                {hauptAntraege.length === 0 ? (
                   <div className="p-8 text-center bg-slate-900/50 rounded-3xl border border-slate-800 text-slate-400">
                     <Gavel className="w-10 h-10 mx-auto text-slate-600 mb-2" />
-                    <p className="text-sm font-medium">Keine Anträge gefunden.</p>
+                    <p className="text-sm font-medium">Keine Hauptanträge gefunden.</p>
                     <p className="text-xs text-slate-500 mt-1">
                       Passe deine Filtereinstellungen an oder erstelle einen neuen Antrag!
                     </p>
                   </div>
                 ) : (
-                  filteredAntraege.map((antrag) => (
+                  hauptAntraege.map((antrag) => (
                     <AntragCard
                       key={antrag.id}
                       antrag={antrag}
@@ -1220,6 +1288,46 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                   )}
                 </div>
               )}
+
+              {/* SEPARATER BLOCK: ZUSATZ- & GO-ANTRÄGE ZUM CLAIMEN FÜR MITGLIEDER */}
+              {memberClaimableZusatzAntraege.length > 0 && (
+                <div className="bg-gradient-to-r from-purple-950/30 via-slate-900 to-indigo-950/30 border-2 border-purple-500/40 rounded-3xl p-4 sm:p-6 shadow-xl space-y-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                          <span>Zusatzanträge & GO-Anträge zum Claimen</span>
+                          <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
+                            {memberClaimableZusatzAntraege.length}
+                          </span>
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          ÄA, EA, SA, WM, Antrag auf Ende der Debatte & Schluss der Redner:innenliste
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {memberClaimableZusatzAntraege.map((antrag) => (
+                      <AntragCard
+                        key={antrag.id}
+                        antrag={antrag}
+                        currentUserName={currentUserName}
+                        isStrategieLeader={false}
+                        onClaim={handleClaimAntrag}
+                        onUnclaim={handleUnclaimAntrag}
+                        onActivate={() => {}}
+                        onEdit={() => {}}
+                        onDelete={() => {}}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1232,6 +1340,9 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           antraege={session.antraege}
           isStrategieLeader={isStrategieLeader}
           onSaveNotes={handleUpdateStrategyNotes}
+          currentUserName={currentUserName}
+          onClaim={handleClaimAntrag}
+          onUnclaim={handleUnclaimAntrag}
         />
       )}
 
@@ -1266,6 +1377,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           }}
         />
       )}
+
+      {/* Footer */}
+      <footer className="pt-6 pb-2 text-center text-xs text-slate-500 border-t border-slate-900/60 flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3">
+        <span>Schüler:innenparlament (SiP) • Live-Tool</span>
+        <span className="hidden sm:inline text-slate-700">•</span>
+        <span className="text-slate-400 font-semibold">© Elias Mathis</span>
+      </footer>
     </div>
   );
 };

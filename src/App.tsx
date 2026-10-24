@@ -339,8 +339,10 @@ export const App: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-900">
-        Schüler:innenparlament (SiP) • Angemeldet als <strong>{currentUser.name}</strong> ({currentUser.username})
+      <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3">
+        <span>Schüler:innenparlament (SiP) • Angemeldet als <strong>{currentUser.name}</strong> ({currentUser.username})</span>
+        <span className="hidden sm:inline text-slate-700">•</span>
+        <span className="text-slate-400 font-semibold">© Elias Mathis</span>
       </footer>
     </div>
   );

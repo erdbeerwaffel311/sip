@@ -37,7 +37,27 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
   const [text, setText] = useState(strategyNotes);
 
   const claimedAntraege = antraege.filter((a) => a.claimedBy);
-  const zusatzUndGoAntraege = antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+  const zusatzUndGoAntraege = [...antraege.filter((a) => a.type !== 'HAUPTANTRAG')].sort((a, b) => {
+    if (isStrategieLeader) {
+      if (!a.isPreFab && b.isPreFab) return -1;
+      if (a.isPreFab && !b.isPreFab) return 1;
+      if (!a.isPreFab && !b.isPreFab) {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      return 0;
+    } else {
+      const aIsMine = !a.isPreFab && a.author === currentUserName;
+      const bIsMine = !b.isPreFab && b.author === currentUserName;
+      if (aIsMine && !bIsMine) return -1;
+      if (!aIsMine && bIsMine) return 1;
+      if (!a.isPreFab && b.isPreFab) return -1;
+      if (a.isPreFab && !b.isPreFab) return 1;
+      if (!a.isPreFab && !b.isPreFab) {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      return 0;
+    }
+  });
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();

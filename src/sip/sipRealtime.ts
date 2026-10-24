@@ -35,6 +35,7 @@ class SipRealtimeService {
   private listeners: Set<(session: SipSession) => void> = new Set();
   private notificationListeners: Set<(notif: SipNotification) => void> = new Set();
   private activeBlurPopupListeners: Set<(antrag: SipAntrag) => void> = new Set();
+  private recentNotificationSignatures: Map<string, number> = new Map();
   private isInitialized = false;
 
   private syncInterval: any = null;
@@ -135,7 +136,7 @@ class SipRealtimeService {
       driveFolderUrl: session.driveFolderUrl || DEFAULT_SIP_SESSION.driveFolderUrl,
       activeAntragId: activeId,
       voteRecommendation: session.voteRecommendation || DEFAULT_SIP_SESSION.voteRecommendation,
-      antraege: [...refreshedPreFabs, ...customAntraege],
+      antraege: [...customAntraege, ...refreshedPreFabs],
       memes: session.memes && session.memes.length > 0 ? session.memes : DEFAULT_SIP_SESSION.memes,
     };
   }
@@ -156,6 +157,72 @@ class SipRealtimeService {
     const prevActiveId = this.currentSession.activeAntragId;
     const newActiveId = merged.activeAntragId;
     const isNewActive = Boolean(newActiveId && newActiveId !== prevActiveId);
+
+    // 1. Claims diffen: Wenn jemand claimt, überall Benachrichtigung triggern
+    if (this.hasLoadedCloudSession && this.currentSession.antraege) {
+      merged.antraege.forEach((newA) => {
+        if (newA.claimedBy) {
+          const oldA = this.currentSession.antraege?.find((a) => a.id === newA.id);
+          if (!oldA || oldA.claimedBy !== newA.claimedBy) {
+            this.triggerNotification({
+              id: `claim_${newA.id}_${newA.claimedBy}`,
+              title: '📢 Antrag geclaimed!',
+              message: `${newA.claimedBy} hat "${newA.title}" geclaimed.`,
+              type: 'claim',
+              timestamp: new Date().toISOString(),
+              antragId: newA.id,
+            });
+          }
+        }
+      });
+    }
+
+    // 2. Abstimmungsempfehlung diffen: Wenn veröffentlicht oder geändert, überall Benachrichtigung triggern
+    if (this.hasLoadedCloudSession) {
+      const oldRec = this.currentSession.voteRecommendation;
+      const newRec = merged.voteRecommendation;
+      if (
+        newRec &&
+        newRec.isPublished &&
+        newRec.type !== 'KEINE' &&
+        (!oldRec ||
+          !oldRec.isPublished ||
+          oldRec.type !== newRec.type ||
+          oldRec.updatedAt !== newRec.updatedAt ||
+          oldRec.note !== newRec.note)
+      ) {
+        this.triggerNotification({
+          id: `vote_${newRec.updatedAt || Date.now()}_${newRec.type}`,
+          title: `🗳️ Abstimmungsempfehlung: ${newRec.type}`,
+          message: newRec.note
+            ? `Empfehlung: ${newRec.type} – ${newRec.note}`
+            : `Empfehlung: ${newRec.type}`,
+          type: 'vote',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 3. Neu eingereichte Nebenanträge von Mitgliedern
+    if (this.hasLoadedCloudSession && this.currentSession.antraege) {
+      const oldCustomIds = new Set(
+        (this.currentSession.antraege || []).filter((a) => !a.isPreFab).map((a) => a.id)
+      );
+      merged.antraege
+        .filter((a) => !a.isPreFab)
+        .forEach((newCustom) => {
+          if (!oldCustomIds.has(newCustom.id)) {
+            this.triggerNotification({
+              id: `submit_${newCustom.id}`,
+              title: '📝 Neuer Nebenantrag eingereicht',
+              message: `${newCustom.author} hat einen neuen Antrag eingereicht: "${newCustom.title}"`,
+              type: 'motion',
+              timestamp: new Date().toISOString(),
+              antragId: newCustom.id,
+            });
+          }
+        });
+    }
 
     // Supabase ist die offizielle Single Source of Truth für alle Teilnehmer im Plenum
     this.hasLoadedCloudSession = true;
@@ -224,6 +291,11 @@ class SipRealtimeService {
             }
           }
         )
+        .on('broadcast', { event: 'sip_event' }, (payload) => {
+          if (payload && payload.payload) {
+            this.handleIncomingMessage(payload.payload as SipRealtimeMessage);
+          }
+        })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             console.log('[SiP Realtime] Connected to live channel on table: sip_state');
@@ -272,6 +344,21 @@ class SipRealtimeService {
   }
 
   private triggerNotification(notif: SipNotification) {
+    const sig = notif.id || `${notif.type}_${notif.title}_${notif.message}`;
+    const now = Date.now();
+    const lastTriggered = this.recentNotificationSignatures.get(sig);
+    if (lastTriggered && now - lastTriggered < 8000) {
+      // Duplikat innerhalb von 8 Sekunden ignorieren
+      return;
+    }
+    this.recentNotificationSignatures.set(sig, now);
+
+    if (this.recentNotificationSignatures.size > 100) {
+      this.recentNotificationSignatures.forEach((time, k) => {
+        if (now - time > 30000) this.recentNotificationSignatures.delete(k);
+      });
+    }
+
     this.notificationListeners.forEach((cb) => {
       try {
         cb(notif);

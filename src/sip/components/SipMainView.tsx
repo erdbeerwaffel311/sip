@@ -21,6 +21,7 @@ import {
   UserX,
   Clock,
   XCircle,
+  X,
   Copy,
   Mic,
   Archive,
@@ -113,15 +114,17 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
       }
     });
 
+    let toastTimer: any = null;
     const unsubNotif = sipRealtime.onNotification((notif) => {
       setActiveToast(notif);
-      const timer = setTimeout(() => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
         setActiveToast((current) => (current?.id === notif.id ? null : current));
-      }, 5000);
-      return () => clearTimeout(timer);
+      }, 6000);
     });
 
     return () => {
+      if (toastTimer) clearTimeout(toastTimer);
       unsubSession();
       unsubBlur();
       unsubNotif();
@@ -190,10 +193,37 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   const activeSubAntraege = useMemo(() => {
     if (!activeAntrag) return [];
 
-    return session.antraege.filter(
+    const subs = session.antraege.filter(
       (a) => a.parentAntragId === activeAntrag.id && a.type !== 'HAUPTANTRAG'
     );
-  }, [activeAntrag, session.antraege]);
+
+    return [...subs].sort((a, b) => {
+      if (isStrategieLeader) {
+        // 1. Strategieführung sieht von Mitgliedern eigens eingereichte Nebenanträge IMMER ganz oben
+        if (!a.isPreFab && b.isPreFab) return -1;
+        if (a.isPreFab && !b.isPreFab) return 1;
+        if (!a.isPreFab && !b.isPreFab) {
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        }
+        return 0;
+      } else {
+        // 2. Wenn ein Mitglied einen eigenen Nebenantrag stellt, soll dieser beim jeweiligen Mitglied ganz oben aufscheinen
+        const aIsMine = !a.isPreFab && a.author === currentUserName;
+        const bIsMine = !b.isPreFab && b.author === currentUserName;
+        if (aIsMine && !bIsMine) return -1;
+        if (!aIsMine && bIsMine) return 1;
+
+        // Danach eigens eingereichte Anträge anderer Mitglieder
+        if (!a.isPreFab && b.isPreFab) return -1;
+        if (a.isPreFab && !b.isPreFab) return 1;
+
+        if (!a.isPreFab && !b.isPreFab) {
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        }
+        return 0;
+      }
+    });
+  }, [activeAntrag, session.antraege, isStrategieLeader, currentUserName]);
 
   // Handlers
   async function handleActivateAntrag(antragId: string) {
@@ -272,21 +302,59 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-6">
-      {/* Toast Notification for Claims / Events */}
+      {/* Toast Notification for Claims / Recommendations / Submissions */}
       {activeToast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900 border-2 border-sky-400 text-white rounded-2xl p-4 shadow-2xl animate-in slide-in-from-bottom duration-300">
+        <div
+          className={`fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900 border-2 text-white rounded-2xl p-4 shadow-2xl animate-in slide-in-from-bottom duration-300 ${
+            activeToast.type === 'vote'
+              ? 'border-amber-400 shadow-amber-500/20'
+              : activeToast.type === 'claim'
+              ? 'border-emerald-400 shadow-emerald-500/20'
+              : 'border-sky-400 shadow-sky-500/20'
+          }`}
+        >
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 shrink-0">
-              <Radio className="w-5 h-5 animate-pulse" />
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                activeToast.type === 'vote'
+                  ? 'bg-amber-500/20 text-amber-300'
+                  : activeToast.type === 'claim'
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-sky-500/20 text-sky-400'
+              }`}
+            >
+              {activeToast.type === 'claim' ? (
+                <UserCheck className="w-5 h-5" />
+              ) : activeToast.type === 'vote' ? (
+                <CheckCircle2 className="w-5 h-5" />
+              ) : (
+                <Radio className="w-5 h-5 animate-pulse" />
+              )}
             </div>
             <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-bold text-sky-300 leading-snug">
+              <h4
+                className={`text-sm font-bold leading-snug ${
+                  activeToast.type === 'vote'
+                    ? 'text-amber-300'
+                    : activeToast.type === 'claim'
+                    ? 'text-emerald-300'
+                    : 'text-sky-300'
+                }`}
+              >
                 {activeToast.title}
               </h4>
               <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
                 {activeToast.message}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => setActiveToast(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0 cursor-pointer"
+              title="Schließen"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}
@@ -648,28 +716,105 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     </button>
                   </div>
 
-                  {/* Claimbare Nebenanträge zu diesem aktiven Hauptantrag */}
-                  {activeSubAntraege.length > 0 && (
-                    <div className="bg-gradient-to-r from-purple-950/30 via-slate-900 to-indigo-950/30 border-2 border-purple-500/40 rounded-3xl p-4 sm:p-6 shadow-xl space-y-3.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
-                            <Sparkles className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                              <span>Nebenanträge zur laufenden Debatte</span>
-                              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
-                                {activeSubAntraege.length}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-400">
-                              Claimbare Nebenanträge zu {activeAntrag.title} (ÄA, EA, SA, WM)
-                            </p>
-                          </div>
+                  {/* Nebenanträge zu diesem aktiven Hauptantrag */}
+                  <div className="bg-gradient-to-r from-purple-950/30 via-slate-900 to-indigo-950/30 border-2 border-purple-500/40 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                            <span>Nebenanträge zur laufenden Debatte</span>
+                            <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
+                              {activeSubAntraege.length}
+                            </span>
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Zusatzanträge & Wortmeldungen zu {activeAntrag.title} (ÄA, EA, SA, WM)
+                          </p>
                         </div>
                       </div>
+                    </div>
 
+                    {/* Option, eigene Nebenanträge zu erstellen: Vor allen vorgefertigten Nebenanträgen */}
+                    <div className="p-4 rounded-2xl bg-slate-950/90 border border-purple-500/30 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Plus className="w-4 h-4 text-purple-400" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-purple-300">
+                            Eigenen Nebenantrag erstellen
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-400 hidden sm:inline">
+                          Eigens eingereichte Anträge erscheinen immer ganz oben
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'AAA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-sky-500/20 border border-sky-500/40 text-sky-200 transition text-xs font-bold cursor-pointer"
+                        >
+                          <span>✏️ ÄA</span>
+                          <span className="text-[10px] text-slate-400">Abänderung</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'EA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 transition text-xs font-bold cursor-pointer"
+                        >
+                          <span>➕ EA</span>
+                          <span className="text-[10px] text-slate-400">Erweiterung</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'SA', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-rose-500/20 border border-rose-500/40 text-rose-200 transition text-xs font-bold cursor-pointer"
+                        >
+                          <span>❌ SA</span>
+                          <span className="text-[10px] text-slate-400">Streichung</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'WM', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-amber-500/20 border border-amber-500/40 text-amber-200 transition text-xs font-bold cursor-pointer"
+                        >
+                          <span>🙋 WM</span>
+                          <span className="text-[10px] text-slate-400">Wortmeldung</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewAntragPreset({ defaultType: 'ENDE_DEBATTE', parentAntrag: activeAntrag });
+                            setShowNewAntragModal(true);
+                          }}
+                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-purple-500/20 border border-purple-500/40 text-purple-200 transition text-xs font-bold cursor-pointer col-span-2 sm:col-span-1"
+                        >
+                          <span>⚖️ GO</span>
+                          <span className="text-[10px] text-slate-400">Geschäftsordnung</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Liste der Nebenanträge (von Mitgliedern eingereichte IMMER ganz oben) */}
+                    {activeSubAntraege.length === 0 ? (
+                      <div className="p-5 text-center rounded-2xl bg-slate-950/50 border border-slate-800 text-slate-400 text-xs">
+                        Noch keine Nebenanträge vorhanden. Klicke oben auf einen Button (z.B. ÄA, EA, SA, WM), um einen Nebenantrag einzubringen.
+                      </div>
+                    ) : (
                       <div className="space-y-3">
                         {activeSubAntraege.map((antrag) => (
                           <AntragCard
@@ -687,8 +832,8 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           />
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1022,16 +1167,39 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       )}
                     </div>
 
-                    {/* Interaktiver Bereich: ÄA, EA, SA, WM einreichen */}
-                    <div className="p-5 rounded-2xl bg-gradient-to-r from-sky-950/40 via-slate-950 to-indigo-950/40 border border-sky-500/30">
-                      <div className="flex items-center gap-2 mb-2">
+                  </div>
+
+                  {/* Claimbare Nebenanträge & Option, eigene Nebenanträge zu erstellen */}
+                  <div className="bg-gradient-to-r from-purple-950/20 via-slate-900 to-indigo-950/20 border-2 border-purple-500/30 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                            <span>Nebenanträge zur laufenden Debatte</span>
+                            <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
+                              {activeSubAntraege.length}
+                            </span>
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Direkt hier claimen oder eigenen Zusatzantrag einbringen
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Option, eigene Nebenanträge zu erstellen: Vor allen vorgefertigten Nebenanträgen */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-sky-950/40 via-slate-950 to-indigo-950/40 border border-sky-500/30">
+                      <div className="flex items-center gap-2 mb-1.5">
                         <Sparkles className="w-4 h-4 text-sky-400" />
                         <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-sky-300">
-                          Zusatzantrag oder Wortmeldung zu diesem Antrag
+                          Eigenen Nebenantrag oder Wortmeldung erstellen
                         </h4>
                       </div>
-                      <p className="text-xs text-slate-400 mb-4">
-                        Möchtest du eine Änderung, Streichung oder Wortmeldung zu diesem aktuellen Antrag einbringen?
+                      <p className="text-xs text-slate-400 mb-3">
+                        Möchtest du eine Änderung, Streichung oder Wortmeldung zu {activeAntrag.title} einbringen? Dein eingereichter Antrag erscheint direkt ganz oben auf deiner Liste!
                       </p>
 
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
@@ -1096,30 +1264,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         </button>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Claimbare Nebenanträge & GO-Anträge zu diesem Antrag */}
-                  {activeSubAntraege.length > 0 && (
-                    <div className="bg-gradient-to-r from-purple-950/20 via-slate-900 to-indigo-950/20 border-2 border-purple-500/30 rounded-3xl p-4 sm:p-6 shadow-xl space-y-3.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-500/20">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
-                            <Sparkles className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                              <span>Nebenanträge zur laufenden Debatte</span>
-                              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
-                                {activeSubAntraege.length}
-                              </span>
-                            </h3>
-                            <p className="text-xs text-slate-400">
-                              Direkt hier claimen: ÄA, EA, SA & Wortmeldungen
-                            </p>
-                          </div>
-                        </div>
+                    {/* Liste der Nebenanträge (Eigene Anträge GANZ OBEN) */}
+                    {activeSubAntraege.length === 0 ? (
+                      <div className="p-5 text-center rounded-2xl bg-slate-950/50 border border-slate-800 text-slate-400 text-xs">
+                        Noch keine Nebenanträge vorhanden. Klicke oben auf einen Button (z.B. ÄA, EA, SA, WM), um den ersten Antrag einzubringen.
                       </div>
-
+                    ) : (
                       <div className="space-y-3">
                         {activeSubAntraege.map((sub) => (
                           <AntragCard
@@ -1135,8 +1286,8 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           />
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* Warteraum wenn noch kein Antrag aufgerufen ist */
@@ -1155,7 +1306,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     Warte auf Aufruf der Strategieführung...
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mb-6 leading-relaxed">
-                    Sobald die Strategieführung den nächsten Antrag im Plenum aufruft, ploppt dieser automatisch mit akustischem Signal und Vollbild-Overlay auf deinem Bildschirm auf.
+                    Sobald die Strategieführung den nächsten Antrag im Plenum aufruft, ploppt dieser automatisch mit Vollbild-Overlay auf deinem Bildschirm auf.
                   </p>
 
                   <button

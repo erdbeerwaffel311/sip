@@ -59,6 +59,7 @@ export const App: React.FC = () => {
   });
 
   const [currentView, setCurrentView] = useState<'parliament' | 'admin'>('parliament');
+  const [initial2FAVerified, setInitial2FAVerified] = useState(false);
 
   // Automatische Erkennung beim Öffnen über den 2FA-Bestätigungslink aus der E-Mail (wie im Inventurprogramm)
   useEffect(() => {
@@ -68,17 +69,60 @@ export const App: React.FC = () => {
       url.hash.includes('access_token') ||
       Boolean(url.searchParams.get('2fa_code'));
 
+    const client = getSupabaseClient(settings);
+
+    function grantAdminSession() {
+      setInitial2FAVerified(true);
+      setIsAdminUnlocked(true);
+      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
+      setCurrentView('admin');
+
+      // Falls aktuell noch kein Benutzer eingeloggt ist, erstelle eine verifizierte Admin-Sitzung
+      setCurrentUser((prev) => {
+        if (prev) return prev;
+        const matched = settings.memberAccounts.find(
+          (a) => a.username.toLowerCase() === settings.adminEmail?.toLowerCase()
+        );
+        const adminUser: MemberAccount = matched || {
+          name: 'Administrator',
+          username: settings.adminEmail || 'admin@schuelerunion.at',
+          password: settings.adminPassword,
+          role: 'admin',
+        };
+        localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(adminUser));
+        return adminUser;
+      });
+
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     if (has2FAParam && settings.adminEmail) {
       verifyAdmin2FACode(settings, settings.adminEmail, window.location.href).then((ok) => {
         if (ok) {
-          setIsAdminUnlocked(true);
-          localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-          setCurrentView('admin');
-          window.history.replaceState({}, document.title, window.location.pathname);
+          grantAdminSession();
         }
       });
     }
-  }, [settings.adminEmail, currentUser]);
+
+    if (client) {
+      const { data: sub } = client.auth.onAuthStateChange((event, session) => {
+        if (
+          (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') &&
+          session?.user?.email &&
+          (!settings.adminEmail ||
+            session.user.email.toLowerCase() === settings.adminEmail.trim().toLowerCase())
+        ) {
+          if (has2FAParam) {
+            grantAdminSession();
+          }
+        }
+      });
+
+      return () => {
+        sub.subscription.unsubscribe();
+      };
+    }
+  }, [settings.adminEmail, settings.memberAccounts, settings.adminPassword]);
 
   // Cloud Sync für Einstellungen & Accounts
   useEffect(() => {
@@ -261,6 +305,7 @@ export const App: React.FC = () => {
             settings={settings}
             onUpdateSettings={handleSaveSettings}
             onClose={() => setCurrentView('parliament')}
+            initial2FAVerified={initial2FAVerified}
           />
         ) : (
           <SipMainView

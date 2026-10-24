@@ -33,14 +33,18 @@ interface SipAdminViewProps {
   settings: AppSettings;
   onUpdateSettings: (newSettings: AppSettings) => void;
   onClose: () => void;
+  initial2FAVerified?: boolean;
 }
 
 export const SipAdminView: React.FC<SipAdminViewProps> = ({
   settings,
   onUpdateSettings,
   onClose,
+  initial2FAVerified,
 }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'settings'>(
+    initial2FAVerified ? 'settings' : 'users'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'STRATEGIE' | 'MEMBER' | 'EXTERNAL' | 'EXPIRED'>('ALL');
 
@@ -60,7 +64,9 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
   // 2FA Protected Area State (wie im Inventurprogramm)
-  const [twoFactorStage, setTwoFactorStage] = useState<'idle' | 'code_sent' | 'verified'>('idle');
+  const [twoFactorStage, setTwoFactorStage] = useState<'idle' | 'code_sent' | 'verified'>(
+    initial2FAVerified ? 'verified' : 'idle'
+  );
   const [twoFactorLoading, setTwoFactorLoading] = useState(false);
   const [twoFactorCodeInput, setTwoFactorCodeInput] = useState('');
   const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
@@ -68,7 +74,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
 
   const [twoFactorNewAdminPassword, setTwoFactorNewAdminPassword] = useState('');
   const [twoFactorNewStrategiePassword, setTwoFactorNewStrategiePassword] = useState('');
-  const [twoFactorNewEmail, setTwoFactorNewEmail] = useState('');
+  const [twoFactorNewEmail, setTwoFactorNewEmail] = useState(settings.adminEmail || '');
 
   function showBanner(msg: string) {
     setBannerMessage(msg);
@@ -76,6 +82,15 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       setBannerMessage((prev) => (prev === msg ? null : prev));
     }, 4500);
   }
+
+  React.useEffect(() => {
+    if (initial2FAVerified) {
+      setActiveTab('settings');
+      setTwoFactorStage('verified');
+      setTwoFactorNewEmail(settings.adminEmail || '');
+      showBanner('2FA erfolgreich bestätigt! Du kannst die Passwörter und die 2FA-E-Mail jetzt ändern.');
+    }
+  }, [initial2FAVerified, settings.adminEmail]);
 
   // Filtered accounts
   const filteredAccounts = useMemo(() => {

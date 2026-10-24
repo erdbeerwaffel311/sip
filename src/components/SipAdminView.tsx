@@ -687,9 +687,9 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
                 {/* Stufe 2: Code gesendet -> Eingabe */}
                 {twoFactorStage === 'code_sent' && (
                   <form onSubmit={handleVerify2FACode} className="space-y-3 pt-2 border-t border-slate-800">
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs text-slate-300 leading-relaxed">
                       Wir haben eine 2FA-E-Mail an <strong>{settings.adminEmail}</strong> gesendet.
-                      Gib den 6-stelligen Code ein oder füge den Link aus der E-Mail hier ein:
+                      Trage einfach den <strong>6-stelligen Bestätigungscode</strong> aus der E-Mail hier ein (du musst nicht auf den Link klicken):
                     </p>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input

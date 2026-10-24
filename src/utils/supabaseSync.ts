@@ -89,8 +89,8 @@ export async function sendAdmin2FAEmail(
 
   const redirectUrl =
     typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?2fa=verify`
-      : 'https://sip.schuelerunion-vorarlberg.at/?2fa=verify';
+      ? `${window.location.origin}${window.location.pathname}?2fa=verify&source=sip`
+      : 'https://sip.schuelerunion-vorarlberg.at/?2fa=verify&source=sip';
 
   const { error } = await client.auth.signInWithOtp({
     email: cleanEmail,

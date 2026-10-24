@@ -186,28 +186,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     return session.antraege.find((a) => a.isActive) || null;
   }, [session.activeAntragId, session.antraege]);
 
-  // Zusatzanträge & Wortmeldungen zu diesem aktiven Antrag (inkl. GO-Anträge wie Ende der Debatte & Schluss der Redner:innenliste)
+  // Spezifisch zu diesem aktiven Hauptantrag eingereichte Nebenanträge (ÄA, EA, SA, WM)
   const activeSubAntraege = useMemo(() => {
     if (!activeAntrag) return [];
 
-    // 1. Spezifisch zu diesem Hauptantrag eingereichte Nebenanträge (ÄA, EA, SA, WM)
-    const linked = session.antraege.filter(
+    return session.antraege.filter(
       (a) => a.parentAntragId === activeAntrag.id && a.type !== 'HAUPTANTRAG'
     );
-
-    // 2. Die GO-Anträge für die laufende Debatte (Ende der Debatte, Ende der Redner:innenliste)
-    const goMotions = session.antraege.filter(
-      (a) => a.type === 'ENDE_DEBATTE' || a.type === 'ENDE_REDNER'
-    );
-
-    const result = [...linked];
-    goMotions.forEach((go) => {
-      if (!result.some((r) => r.id === go.id)) {
-        result.push(go);
-      }
-    });
-
-    return result;
   }, [activeAntrag, session.antraege]);
 
   // Handlers
@@ -673,13 +658,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           </div>
                           <div>
                             <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                              <span>Nebenanträge & GO-Anträge zur laufenden Debatte</span>
+                              <span>Nebenanträge zur laufenden Debatte</span>
                               <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
                                 {activeSubAntraege.length}
                               </span>
                             </h3>
                             <p className="text-xs text-slate-400">
-                              Claimbare Nebenanträge zu {activeAntrag.title} (Ende der Debatte, Schluss Redner:innenliste, ÄA, EA, SA, WM)
+                              Claimbare Nebenanträge zu {activeAntrag.title} (ÄA, EA, SA, WM)
                             </p>
                           </div>
                         </div>
@@ -1170,13 +1155,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           </div>
                           <div>
                             <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                              <span>Nebenanträge & GO-Anträge zur laufenden Debatte</span>
+                              <span>Nebenanträge zur laufenden Debatte</span>
                               <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
                                 {activeSubAntraege.length}
                               </span>
                             </h3>
                             <p className="text-xs text-slate-400">
-                              Direkt hier claimen: Antrag auf Ende der Debatte, Schluss der Redner:innenliste, ÄA, EA, SA & Wortmeldungen
+                              Direkt hier claimen: ÄA, EA, SA & Wortmeldungen
                             </p>
                           </div>
                         </div>

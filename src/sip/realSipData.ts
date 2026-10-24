@@ -4,32 +4,6 @@ export const REAL_SIP_STRATEGY_NOTES: string = "### 🎯 HOW TO SiP – Strategi
 
 export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
   {
-    "id": "antrag_go_ende_debatte",
-    "type": "ENDE_DEBATTE",
-    "title": "GO-Antrag: Antrag auf Ende der Debatte",
-    "content": "Antrag auf sofortige Beendigung der laufenden Debatte und unverzüglichen Übergang zur Abstimmung (§ 5 SiP GO).",
-    "author": "SiP Geschäftsordnung",
-    "isPreFab": true,
-    "status": "approved",
-    "claimedBy": null,
-    "claimedAt": null,
-    "isActive": false,
-    "createdAt": "2026-10-24T08:00:00.000Z"
-  },
-  {
-    "id": "antrag_go_ende_redner",
-    "type": "ENDE_REDNER",
-    "title": "GO-Antrag: Antrag auf Ende der Redner:innenliste",
-    "content": "Antrag auf Schließung der Redner:innenliste. Es werden keine neuen Redner:innen mehr zugelassen (§ 5 SiP GO).",
-    "author": "SiP Geschäftsordnung",
-    "isPreFab": true,
-    "status": "approved",
-    "claimedBy": null,
-    "claimedAt": null,
-    "isActive": false,
-    "createdAt": "2026-10-24T08:05:00.000Z"
-  },
-  {
     "id": "antrag_1",
     "type": "HAUPTANTRAG",
     "title": "Antrag 1: Änderung der Geschäftsordnung",

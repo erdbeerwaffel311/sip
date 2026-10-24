@@ -12,7 +12,7 @@ export interface ParsedRawAntrag {
 
 /**
  * Analysiert Fließtext aus Google Docs / SiP-Antragsunterlagen
- * und erkennt automatisch Wortmeldungen (WM), Abänderungsanträge (AÄA / ÄA),
+ * und erkennt automatisch Wortmeldungen (WM), Abänderungsanträge (ÄA),
  * Erweiterungsanträge (EA), Streichungsanträge (SA) sowie GO-Anträge.
  */
 export function parseAntraegeFromText(rawText: string): ParsedRawAntrag[] {

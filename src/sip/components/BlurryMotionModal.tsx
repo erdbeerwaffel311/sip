@@ -68,11 +68,16 @@ export const BlurryMotionModal: React.FC<BlurryMotionModalProps> = ({
               >
                 {typeConfig.shortLabel} • {typeConfig.label}
               </span>
-              {antrag.lineOrParagraph && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  {antrag.lineOrParagraph}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-sky-300 bg-sky-950/60 border border-sky-500/30 px-2 py-0.5 rounded-lg">
+                  Antragsteller:in: <strong className="text-white">{antrag.author}</strong>
                 </span>
-              )}
+                {antrag.lineOrParagraph && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                    📍 {antrag.lineOrParagraph}
+                  </span>
+                )}
+              </div>
             </div>
 
             <h3 className="font-bold text-base text-slate-100 mb-1.5 leading-snug">

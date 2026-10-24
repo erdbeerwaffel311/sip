@@ -2,7 +2,7 @@ import { REAL_SIP_ANTRAEGE, REAL_SIP_STRATEGY_NOTES } from './realSipData';
 
 export type AntragType =
   | 'WM' // Wortmeldung
-  | 'AAA' // Abänderungsantrag (AÄA / ÄA)
+  | 'AAA' // Abänderungsantrag (ÄA)
   | 'EA' // Erweiterungsantrag
   | 'SA' // Streichungsantrag
   | 'ENDE_DEBATTE' // Antrag auf Ende der Debatte
@@ -16,6 +16,7 @@ export interface VoteRecommendation {
   note: string;
   updatedAt: string;
   updatedBy: string;
+  isPublished?: boolean; // Ob die Strategieführung diese Empfehlung im Plenum an alle freigegeben hat
 }
 
 export interface SipAntrag {
@@ -27,10 +28,11 @@ export interface SipAntrag {
   author: string;
   isPreFab: boolean; // Vorgefertigt aus Dokument vs. selbst eingereicht
   status: 'pending_approval' | 'approved' | 'rejected' | 'completed';
+  isEditedByAdmin?: boolean; // Von der Strategieführung angepasst / korrigiert
   claimedBy?: string | null;
   claimedAt?: string | null;
   isActive?: boolean; // Aktuell im Plenum aufgerufen
-  parentAntragId?: string; // Verknüpfung zu übergeordnetem TOP/Antrag
+  parentAntragId?: string; // Verknüpfung zu übergeordnetem Antrag
   createdAt: string;
   approvedAt?: string;
   adminNotes?: string;
@@ -83,7 +85,7 @@ export const ANTRAG_TYPE_CONFIG: Record<
   },
   AAA: {
     label: 'Abänderungsantrag',
-    shortLabel: 'AÄA / ÄA',
+    shortLabel: 'ÄA',
     badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
     description: 'Änderung an einer bestimmten Textpassage / Zeile',
   },
@@ -124,12 +126,13 @@ export const DEFAULT_SIP_SESSION: SipSession = {
   title: '2. Schüler:innenparlament (SiP) 2024/25',
   driveFolderUrl: 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
   strategyNotes: REAL_SIP_STRATEGY_NOTES,
-  activeAntragId: 'antrag_top_1',
+  activeAntragId: 'antrag_1',
   voteRecommendation: {
-    type: 'JA',
-    note: 'TOP 1: Änderung der Geschäftsordnung – Keine Einwände der BD. Geschlossen mit JA stimmen!',
+    type: 'KEINE',
+    note: '',
     updatedAt: new Date().toISOString(),
     updatedBy: 'Strategieführung',
+    isPublished: false,
   },
   antraege: REAL_SIP_ANTRAEGE,
   memes: [

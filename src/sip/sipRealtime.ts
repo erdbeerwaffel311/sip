@@ -323,6 +323,13 @@ class SipRealtimeService {
     this.currentSession = {
       ...this.currentSession,
       activeAntragId: antragId,
+      voteRecommendation: {
+        type: 'KEINE',
+        note: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Strategieführung',
+        isPublished: false,
+      },
       antraege: this.currentSession.antraege.map((a) => ({
         ...a,
         isActive: a.id === antragId,
@@ -370,6 +377,7 @@ class SipRealtimeService {
   ) {
     const fullRec: VoteRecommendation = {
       ...rec,
+      isPublished: rec.isPublished ?? true,
       updatedAt: new Date().toISOString(),
     };
     this.currentSession = {
@@ -378,6 +386,16 @@ class SipRealtimeService {
       updatedAt: new Date().toISOString(),
     };
     this.notify();
+
+    if (fullRec.isPublished && fullRec.type !== 'KEINE') {
+      this.triggerNotification({
+        id: `notif_${Date.now()}`,
+        title: '📢 Offizielle Abstimmungsempfehlung!',
+        message: `Empfehlung: ${fullRec.type}${fullRec.note ? ` – ${fullRec.note}` : ''}`,
+        type: 'vote',
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     const msg: SipRealtimeMessage = {
       type: 'VOTE_REC_CHANGED',

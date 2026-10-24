@@ -1,6 +1,6 @@
 import { SipAntrag } from './types';
 
-export const REAL_SIP_STRATEGY_NOTES: string = "### 🎯 HOW TO SiP – Strategie & Team-Leitfaden Schülerunion\n\n**Genereller Ablauf:**\n• **Treffpunkt:** Pünktlich um 6:45 Uhr vor dem Landhaus für den Verpflegungsstand (Frühstück, Getränke)\n• **Aufbau:** LSV baut ab 7:00 Uhr drinnen auf\n• **Check-In:** 7:30 Uhr Beginn Check-In (wir teilen uns auf, wer wann mit wem in den Raum geht)\n• **Dresscode:** Gewisser Kleidungsstil wird erwartet (muss kein Anzug sein) – *smart / business casual*\n• **Mitbewerber:** Es gibt Mitbewerber, die versuchen, euch von den anderen Delegierten wegzuhalten -> konzentriert euch bitte auf unsere Leute!\n\n**Während dem SiP:**\n• **Wortmeldungen:** Bitte auf keinen Fall ablesen, am besten nur Stichworte mit nach vorne nehmen!\n• **Auftreten:** „Man muss dem Hund mit Feuer in die Augen schauen“ -> sachlich, professionell und respektvoll bleiben.\n• **Proaktiv sein:** Gerade wenn die Redner:innenliste eröffnet wird (Aufzeigen gilt nur mit Delegiertenkarte!).\n• **Bildschirm-Schutz:** Niemand darf in eure Bildschirme sehen! Keine Geräte offen liegen lassen!\n• **Zusammenhalt:** An Absprachen halten – zusammenhalten als Team Schülerunion ❤️\n• **Antrags-Zettel:** Stapel Zettel für Anträge gleich am Morgen mitnehmen (AÄA / EA gleich vorschreiben).\n• **Schlussminute:** @Antragsteller:innen die Minute vor der Abstimmung in Anspruch nehmen und 1 Minute darüber reden, warum der Antrag wichtig ist -> vor allem um positive Abstimmung werben!\n";
+export const REAL_SIP_STRATEGY_NOTES: string = "### 🎯 HOW TO SiP – Strategie & Team-Leitfaden Schülerunion\n\n**Genereller Ablauf:**\n• **Treffpunkt:** Pünktlich um 6:45 Uhr vor dem Landhaus für den Verpflegungsstand (Frühstück, Getränke)\n• **Aufbau:** LSV baut ab 7:00 Uhr drinnen auf\n• **Check-In:** 7:30 Uhr Beginn Check-In (wir teilen uns auf, wer wann mit wem in den Raum geht)\n• **Dresscode:** Gewisser Kleidungsstil wird erwartet (muss kein Anzug sein) – *smart / business casual*\n• **Mitbewerber:** Es gibt Mitbewerber, die versuchen, euch von den anderen Delegierten wegzuhalten -> konzentriert euch bitte auf unsere Leute!\n\n**Während dem SiP:**\n• **Wortmeldungen:** Bitte auf keinen Fall ablesen, am besten nur Stichworte mit nach vorne nehmen!\n• **Auftreten:** „Man muss dem Hund mit Feuer in die Augen schauen“ -> sachlich, professionell und respektvoll bleiben.\n• **Proaktiv sein:** Gerade wenn die Redner:innenliste eröffnet wird (Aufzeigen gilt nur mit Delegiertenkarte!).\n• **Bildschirm-Schutz:** Niemand darf in eure Bildschirme sehen! Keine Geräte offen liegen lassen!\n• **Zusammenhalt:** An Absprachen halten – zusammenhalten als Team Schülerunion ❤️\n• **Antrags-Zettel:** Stapel Zettel für Anträge gleich am Morgen mitnehmen (ÄA / EA gleich vorschreiben).\n• **Schlussminute:** @Antragsteller:innen die Minute vor der Abstimmung in Anspruch nehmen und 1 Minute darüber reden, warum der Antrag wichtig ist -> vor allem um positive Abstimmung werben!\n";
 
 export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
   {
@@ -30,11 +30,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "createdAt": "2026-10-24T08:05:00.000Z"
   },
   {
-    "id": "antrag_top_1",
+    "id": "antrag_1",
     "type": "AAA",
-    "title": "TOP 1: Änderung der Geschäftsordnung",
-    "content": "Forderung / Beratung zu TOP 1 (Änderung der Geschäftsordnung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Keine rechtliche Grundlage/Beschränkung, daher keine Kommentierung, betrifft nur\nLSV",
-    "lineOrParagraph": "TOP 1",
+    "title": "Antrag 1: Änderung der Geschäftsordnung",
+    "content": "Forderung / Beratung zu Antrag 1 (Änderung der Geschäftsordnung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Keine rechtliche Grundlage/Beschränkung, daher keine Kommentierung, betrifft nur\nLSV",
+    "lineOrParagraph": "Antrag 1",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -45,11 +45,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Keine rechtliche Grundlage/Beschränkung, daher keine Kommentierung, betrifft nur LSV..."
   },
   {
-    "id": "antrag_top_2",
+    "id": "antrag_2",
     "type": "WM",
-    "title": "TOP 2: SIP 2024/25 – Kommentierte Antragsmappe",
-    "content": "Forderung / Beratung zu TOP 2 (SIP 2024/25 – Kommentierte Antragsmappe):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n",
-    "lineOrParagraph": "TOP 2",
+    "title": "Antrag 2: SIP 2024/25 – Kommentierte Antragsmappe",
+    "content": "Forderung / Beratung zu Antrag 2 (SIP 2024/25 – Kommentierte Antragsmappe):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n",
+    "lineOrParagraph": "Antrag 2",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -60,11 +60,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: ..."
   },
   {
-    "id": "antrag_top_3",
+    "id": "antrag_3",
     "type": "SA",
-    "title": "TOP 3: Bilingualer Unterricht",
-    "content": "Forderung / Beratung zu TOP 3 (Bilingualer Unterricht):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Vorwiegend pädagogisches Thema –Kommentierung nach Rücksprache mit\nPädagogischem Dienst möglich",
-    "lineOrParagraph": "TOP 3",
+    "title": "Antrag 3: Bilingualer Unterricht",
+    "content": "Forderung / Beratung zu Antrag 3 (Bilingualer Unterricht):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Vorwiegend pädagogisches Thema –Kommentierung nach Rücksprache mit\nPädagogischem Dienst möglich",
+    "lineOrParagraph": "Antrag 3",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -75,11 +75,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Vorwiegend pädagogisches Thema –Kommentierung nach Rücksprache mit Pädagogischem Dienst möglich..."
   },
   {
-    "id": "antrag_top_4",
+    "id": "antrag_4",
     "type": "AAA",
-    "title": "TOP 4: Powerfood",
-    "content": "Forderung / Beratung zu TOP 4 (Powerfood):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Es gibt bereits Vorgaben hinsichtlich Schulbuffets (bereits letztes Mal besprochen)\n• Angebot bestimmt aber auch der Anbieter – Vertragsverhandlung",
-    "lineOrParagraph": "TOP 4",
+    "title": "Antrag 4: Powerfood",
+    "content": "Forderung / Beratung zu Antrag 4 (Powerfood):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Es gibt bereits Vorgaben hinsichtlich Schulbuffets (bereits letztes Mal besprochen)\n• Angebot bestimmt aber auch der Anbieter – Vertragsverhandlung",
+    "lineOrParagraph": "Antrag 4",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -90,11 +90,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Es gibt bereits Vorgaben hinsichtlich Schulbuffets (bereits letztes Mal besprochen) • Angebot best..."
   },
   {
-    "id": "antrag_top_5",
+    "id": "antrag_5",
     "type": "EA",
-    "title": "TOP 5: Digitalisierung",
-    "content": "Forderung / Beratung zu TOP 5 (Digitalisierung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Digitale Endgeräte werden schulstufenaufsteigend implementiert\n• Lehrplan – Bundeskompetenz, bereits implementiert\n• Verweis: https://www.bmb.gv.at/Themen/schule/zrp/ki.html",
-    "lineOrParagraph": "TOP 5",
+    "title": "Antrag 5: Digitalisierung",
+    "content": "Forderung / Beratung zu Antrag 5 (Digitalisierung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Digitale Endgeräte werden schulstufenaufsteigend implementiert\n• Lehrplan – Bundeskompetenz, bereits implementiert\n• Verweis: https://www.bmb.gv.at/Themen/schule/zrp/ki.html",
+    "lineOrParagraph": "Antrag 5",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -105,11 +105,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Digitale Endgeräte werden schulstufenaufsteigend implementiert • Lehrplan – Bundeskompetenz, berei..."
   },
   {
-    "id": "antrag_top_6",
+    "id": "antrag_6",
     "type": "EA",
-    "title": "TOP 6: Barrieren runter, Chancen rauf",
-    "content": "Forderung / Beratung zu TOP 6 (Barrieren runter, Chancen rauf):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Es gibt bereits zahlreiche Maßnahmen zum Ausgleich von Behinderungen (Feststellung\neines sonderpädagogischen Förderbedarfs, Persönliche Assistenz, Schulassistenz)\n• Anpassungen sind bereits in Rundschreiben des BMB geregelt\n• Bildungsdirektion: Diversitätsmanagement berät und unterstützt\n• SchUG und LBVO sehen ebenfalls vor, dass auf Behinderungen Bedacht zu nehmen ist\n• Schüler:innen mit SPF sind berechtigt, eine allgemeine Schule zu besuchen; sie können\ndazu aber nicht verpflichtet werden\n• Sprachförderung besteht, Mentorin ggf. freiwillig schulautonom – ansonsten\nGestaltung Bundeskompetenz\n• LP-übergreifendes Thema Reflexive Geschlechterpädagogik und\nGleichstellung/Gesundheitsförderung\n• Kinderschutzkonzept und Kinderschutzteam verpflichtend (Schulordnung 2024)",
-    "lineOrParagraph": "TOP 6",
+    "title": "Antrag 6: Barrieren runter, Chancen rauf",
+    "content": "Forderung / Beratung zu Antrag 6 (Barrieren runter, Chancen rauf):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Es gibt bereits zahlreiche Maßnahmen zum Ausgleich von Behinderungen (Feststellung\neines sonderpädagogischen Förderbedarfs, Persönliche Assistenz, Schulassistenz)\n• Anpassungen sind bereits in Rundschreiben des BMB geregelt\n• Bildungsdirektion: Diversitätsmanagement berät und unterstützt\n• SchUG und LBVO sehen ebenfalls vor, dass auf Behinderungen Bedacht zu nehmen ist\n• Schüler:innen mit SPF sind berechtigt, eine allgemeine Schule zu besuchen; sie können\ndazu aber nicht verpflichtet werden\n• Sprachförderung besteht, Mentorin ggf. freiwillig schulautonom – ansonsten\nGestaltung Bundeskompetenz\n• LP-übergreifendes Thema Reflexive Geschlechterpädagogik und\nGleichstellung/Gesundheitsförderung\n• Kinderschutzkonzept und Kinderschutzteam verpflichtend (Schulordnung 2024)",
+    "lineOrParagraph": "Antrag 6",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -120,11 +120,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Es gibt bereits zahlreiche Maßnahmen zum Ausgleich von Behinderungen (Feststellung eines sonderpäd..."
   },
   {
-    "id": "antrag_top_7",
+    "id": "antrag_7",
     "type": "EA",
-    "title": "TOP 7: BMHS optimieren",
-    "content": "Forderung / Beratung zu TOP 7 (BMHS optimieren):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Arbeitsrechtliche Aufklärung vor dem ersten Pflichtpraktikum ist grds in den\nLehrplänen verankert\n• Lehrplan ist Bundeskompetenz, Unterrichtsprinzipien sind fächerübergreifend zu\nberücksichtigen (z.B: politische Bildung, Medienbildung, Gender Mainstreaming,...)\n• Information über Schulbeihilfe bei BD\n• Kochunterricht als soziales Projekt ggf. schulautonom umsetzbar",
-    "lineOrParagraph": "TOP 7",
+    "title": "Antrag 7: BMHS optimieren",
+    "content": "Forderung / Beratung zu Antrag 7 (BMHS optimieren):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Arbeitsrechtliche Aufklärung vor dem ersten Pflichtpraktikum ist grds in den\nLehrplänen verankert\n• Lehrplan ist Bundeskompetenz, Unterrichtsprinzipien sind fächerübergreifend zu\nberücksichtigen (z.B: politische Bildung, Medienbildung, Gender Mainstreaming,...)\n• Information über Schulbeihilfe bei BD\n• Kochunterricht als soziales Projekt ggf. schulautonom umsetzbar",
+    "lineOrParagraph": "Antrag 7",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -135,11 +135,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Arbeitsrechtliche Aufklärung vor dem ersten Pflichtpraktikum ist grds in den Lehrplänen verankert ..."
   },
   {
-    "id": "antrag_top_8",
+    "id": "antrag_8",
     "type": "AAA",
-    "title": "TOP 8: Gesundheit",
-    "content": "Forderung / Beratung zu TOP 8 (Gesundheit):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Pädagogisches Thema/Schulpsychologie – ggf. nähere Rückmeldung nach Abklärung\nmöglich\n• Grds. Bundeskompetenz – derzeit verpflichtende schulärztliche Untersuchung –\nWeiterverweis an Schulpsychologie etc. bei Indikation\n• Schulautonome Umsetzung von Projekten – grds. LP-übergreifendes Thema\nGesundheitsförderung",
-    "lineOrParagraph": "TOP 8",
+    "title": "Antrag 8: Gesundheit",
+    "content": "Forderung / Beratung zu Antrag 8 (Gesundheit):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Pädagogisches Thema/Schulpsychologie – ggf. nähere Rückmeldung nach Abklärung\nmöglich\n• Grds. Bundeskompetenz – derzeit verpflichtende schulärztliche Untersuchung –\nWeiterverweis an Schulpsychologie etc. bei Indikation\n• Schulautonome Umsetzung von Projekten – grds. LP-übergreifendes Thema\nGesundheitsförderung",
+    "lineOrParagraph": "Antrag 8",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -150,11 +150,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Pädagogisches Thema/Schulpsychologie – ggf. nähere Rückmeldung nach Abklärung möglich • Grds. Bund..."
   },
   {
-    "id": "antrag_top_9",
+    "id": "antrag_9",
     "type": "EA",
-    "title": "TOP 9: Kreidezeit",
-    "content": "Forderung / Beratung zu TOP 9 (Kreidezeit):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan Bundeskompetenz\n• Qualitätssicherung/-management gibt es bereits\n• Schulautonome Möglichkeiten der Mitgestaltung des Unterrichts – grds. Schülerrecht\n• Individuelle Lernbegleitung - § 19a SchUG",
-    "lineOrParagraph": "TOP 9",
+    "title": "Antrag 9: Kreidezeit",
+    "content": "Forderung / Beratung zu Antrag 9 (Kreidezeit):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan Bundeskompetenz\n• Qualitätssicherung/-management gibt es bereits\n• Schulautonome Möglichkeiten der Mitgestaltung des Unterrichts – grds. Schülerrecht\n• Individuelle Lernbegleitung - § 19a SchUG",
+    "lineOrParagraph": "Antrag 9",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -165,11 +165,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Lehrplan Bundeskompetenz • Qualitätssicherung/-management gibt es bereits • Schulautonome Möglichk..."
   },
   {
-    "id": "antrag_top_10",
+    "id": "antrag_10",
     "type": "WM",
-    "title": "TOP 10: Tafel-Titanen",
-    "content": "Forderung / Beratung zu TOP 10 (Tafel-Titanen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Anonymes Feedback kann schulautonom erfolgen\n• Peer-Feedback/Qualitätsmanagement grds. etabliert\n• Ggf. Näheres nach Rücksprache mit Dienstrechtsabteilung\n• Grds. wurde das Thema bereits letztes Mal besprochen",
-    "lineOrParagraph": "TOP 10",
+    "title": "Antrag 10: Tafel-Titanen",
+    "content": "Forderung / Beratung zu Antrag 10 (Tafel-Titanen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Anonymes Feedback kann schulautonom erfolgen\n• Peer-Feedback/Qualitätsmanagement grds. etabliert\n• Ggf. Näheres nach Rücksprache mit Dienstrechtsabteilung\n• Grds. wurde das Thema bereits letztes Mal besprochen",
+    "lineOrParagraph": "Antrag 10",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -180,11 +180,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Anonymes Feedback kann schulautonom erfolgen • Peer-Feedback/Qualitätsmanagement grds. etabliert •..."
   },
   {
-    "id": "antrag_top_11",
+    "id": "antrag_11",
     "type": "EA",
-    "title": "TOP 11: Fördern statt vergessen",
-    "content": "Forderung / Beratung zu TOP 11 (Fördern statt vergessen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Pädagogisches Thema – Begabungsförderung, Initiativen, etc – Konsultation\nPädagogischer Dienst\n• https://www.bildung-vbg.gv.at/service/infomailing/News-/digitale-drehtuer.html\n• Flexibilisierung z.B. durch die Möglichkeit von Gruppenbildung im Rahmen der\nSchulautonomie vorhanden",
-    "lineOrParagraph": "TOP 11",
+    "title": "Antrag 11: Fördern statt vergessen",
+    "content": "Forderung / Beratung zu Antrag 11 (Fördern statt vergessen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Pädagogisches Thema – Begabungsförderung, Initiativen, etc – Konsultation\nPädagogischer Dienst\n• https://www.bildung-vbg.gv.at/service/infomailing/News-/digitale-drehtuer.html\n• Flexibilisierung z.B. durch die Möglichkeit von Gruppenbildung im Rahmen der\nSchulautonomie vorhanden",
+    "lineOrParagraph": "Antrag 11",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -195,11 +195,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Pädagogisches Thema – Begabungsförderung, Initiativen, etc – Konsultation Pädagogischer Dienst • h..."
   },
   {
-    "id": "antrag_top_12",
+    "id": "antrag_12",
     "type": "AAA",
-    "title": "TOP 12: Mitbestimmung",
-    "content": "Forderung / Beratung zu TOP 12 (Mitbestimmung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan ist Bundeskompetenz\n• Politische Bildung als LP-übergreifendes Thema verankert",
-    "lineOrParagraph": "TOP 12",
+    "title": "Antrag 12: Mitbestimmung",
+    "content": "Forderung / Beratung zu Antrag 12 (Mitbestimmung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan ist Bundeskompetenz\n• Politische Bildung als LP-übergreifendes Thema verankert",
+    "lineOrParagraph": "Antrag 12",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -210,11 +210,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Lehrplan ist Bundeskompetenz • Politische Bildung als LP-übergreifendes Thema verankert..."
   },
   {
-    "id": "antrag_top_13",
+    "id": "antrag_13",
     "type": "SA",
-    "title": "TOP 13: Schluss mit Einheitsbrei",
-    "content": "Forderung / Beratung zu TOP 13 (Schluss mit Einheitsbrei):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Ausweitung der Schulautonomie/Flexibilität ist Bundeskompetenz\n• Verstärkte Mitbestimmung kann ggf. schulautonom erfolgen\n• Schulautonomie/Flexibilisierung ist bereits in hohem Ausmaß möglich (Projektwochen,\nProjekte in von Klassen abweichenden Schüler:innengruppen)",
-    "lineOrParagraph": "TOP 13",
+    "title": "Antrag 13: Schluss mit Einheitsbrei",
+    "content": "Forderung / Beratung zu Antrag 13 (Schluss mit Einheitsbrei):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Ausweitung der Schulautonomie/Flexibilität ist Bundeskompetenz\n• Verstärkte Mitbestimmung kann ggf. schulautonom erfolgen\n• Schulautonomie/Flexibilisierung ist bereits in hohem Ausmaß möglich (Projektwochen,\nProjekte in von Klassen abweichenden Schüler:innengruppen)",
+    "lineOrParagraph": "Antrag 13",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -225,11 +225,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Ausweitung der Schulautonomie/Flexibilität ist Bundeskompetenz • Verstärkte Mitbestimmung kann ggf..."
   },
   {
-    "id": "antrag_top_14",
+    "id": "antrag_14",
     "type": "WM",
-    "title": "TOP 14: Zusammen lernen, zusammen wachsen",
-    "content": "Forderung / Beratung zu TOP 14 (Zusammen lernen, zusammen wachsen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Interaktive Gemeinschaftsbereiche – schulautonom\n• Hinsichtlich KlimaTicket besteht keine Kompetenz des Landes oder der des\nBildungsministeriums",
-    "lineOrParagraph": "TOP 14",
+    "title": "Antrag 14: Zusammen lernen, zusammen wachsen",
+    "content": "Forderung / Beratung zu Antrag 14 (Zusammen lernen, zusammen wachsen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Interaktive Gemeinschaftsbereiche – schulautonom\n• Hinsichtlich KlimaTicket besteht keine Kompetenz des Landes oder der des\nBildungsministeriums",
+    "lineOrParagraph": "Antrag 14",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -240,11 +240,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Interaktive Gemeinschaftsbereiche – schulautonom • Hinsichtlich KlimaTicket besteht keine Kompeten..."
   },
   {
-    "id": "antrag_top_15",
+    "id": "antrag_15",
     "type": "SA",
-    "title": "TOP 15: Reife? Prüfung",
-    "content": "Forderung / Beratung zu TOP 15 (Reife? Prüfung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Die Verwendung von Maturaformaten bereits vor der Matura wird empfohlen und in\nder Praxis üblicherweise auch umgesetzt\n• Prüfungsaufgaben sind online zu finden\n• „Qualitätskontrolle“ besteht:\nhttps://www.matura.gv.at/srdp/feldtestungen#:~:text=Feldtestungen%20sind%20Teil\n%20der%20Qualit%C3%A4tssicherung,von%20Sch%C3%BClerinnen%20und%20Sch%C\n3%BClern%20erprobt\n• Regelungen über RP sind Bundesrecht",
-    "lineOrParagraph": "TOP 15",
+    "title": "Antrag 15: Reife? Prüfung",
+    "content": "Forderung / Beratung zu Antrag 15 (Reife? Prüfung):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Die Verwendung von Maturaformaten bereits vor der Matura wird empfohlen und in\nder Praxis üblicherweise auch umgesetzt\n• Prüfungsaufgaben sind online zu finden\n• „Qualitätskontrolle“ besteht:\nhttps://www.matura.gv.at/srdp/feldtestungen#:~:text=Feldtestungen%20sind%20Teil\n%20der%20Qualit%C3%A4tssicherung,von%20Sch%C3%BClerinnen%20und%20Sch%C\n3%BClern%20erprobt\n• Regelungen über RP sind Bundesrecht",
+    "lineOrParagraph": "Antrag 15",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -255,11 +255,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Die Verwendung von Maturaformaten bereits vor der Matura wird empfohlen und in der Praxis üblicher..."
   },
   {
-    "id": "antrag_top_16",
+    "id": "antrag_16",
     "type": "AAA",
-    "title": "TOP 16: EUvolution beginnt mit dir",
-    "content": "Forderung / Beratung zu TOP 16 (EUvolution beginnt mit dir):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Zentrale Anlaufstelle BD – Europaangelegenheiten (Konsortium)\n• Reisen von Schulklassen zu EU-Organen werden zT gefördert",
-    "lineOrParagraph": "TOP 16",
+    "title": "Antrag 16: EUvolution beginnt mit dir",
+    "content": "Forderung / Beratung zu Antrag 16 (EUvolution beginnt mit dir):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Zentrale Anlaufstelle BD – Europaangelegenheiten (Konsortium)\n• Reisen von Schulklassen zu EU-Organen werden zT gefördert",
+    "lineOrParagraph": "Antrag 16",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -270,11 +270,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Zentrale Anlaufstelle BD – Europaangelegenheiten (Konsortium) • Reisen von Schulklassen zu EU-Orga..."
   },
   {
-    "id": "antrag_top_17",
+    "id": "antrag_17",
     "type": "EA",
-    "title": "TOP 17: CO2? Nur im Chemieunterricht",
-    "content": "Forderung / Beratung zu TOP 17 (CO2? Nur im Chemieunterricht):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Bereits beim letzten Mal diskutiert\n• Schulautonom umsetzbar oder sonst Antrag an BD\n• BD ist bestrebt, umzusetzen, wenn es verhältnismäßig möglich ist",
-    "lineOrParagraph": "TOP 17",
+    "title": "Antrag 17: CO2? Nur im Chemieunterricht",
+    "content": "Forderung / Beratung zu Antrag 17 (CO2? Nur im Chemieunterricht):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Bereits beim letzten Mal diskutiert\n• Schulautonom umsetzbar oder sonst Antrag an BD\n• BD ist bestrebt, umzusetzen, wenn es verhältnismäßig möglich ist",
+    "lineOrParagraph": "Antrag 17",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -285,11 +285,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Bereits beim letzten Mal diskutiert • Schulautonom umsetzbar oder sonst Antrag an BD • BD ist best..."
   },
   {
-    "id": "antrag_top_18",
+    "id": "antrag_18",
     "type": "WM",
-    "title": "TOP 18: Bildungs(t)räume gestalten",
-    "content": "Forderung / Beratung zu TOP 18 (Bildungs(t)räume gestalten):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Bau/Sanierung: Anträge an BD\n• Schulautonome Gestaltung zT möglich\n• Zugang zu Trinkwasser ist vorhanden",
-    "lineOrParagraph": "TOP 18",
+    "title": "Antrag 18: Bildungs(t)räume gestalten",
+    "content": "Forderung / Beratung zu Antrag 18 (Bildungs(t)räume gestalten):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Bau/Sanierung: Anträge an BD\n• Schulautonome Gestaltung zT möglich\n• Zugang zu Trinkwasser ist vorhanden",
+    "lineOrParagraph": "Antrag 18",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -300,11 +300,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Bau/Sanierung: Anträge an BD • Schulautonome Gestaltung zT möglich • Zugang zu Trinkwasser ist vor..."
   },
   {
-    "id": "antrag_top_19",
+    "id": "antrag_19",
     "type": "SA",
-    "title": "TOP 19: Herbstgold statt Hitzestress",
-    "content": "Forderung / Beratung zu TOP 19 (Herbstgold statt Hitzestress):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Vorgezogene Prüfungen: Regelungen sind Bundeskompetenz (SchUG)\n• Angebot richtet sich auch nach Möglichkeiten der Schule",
-    "lineOrParagraph": "TOP 19",
+    "title": "Antrag 19: Herbstgold statt Hitzestress",
+    "content": "Forderung / Beratung zu Antrag 19 (Herbstgold statt Hitzestress):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Vorgezogene Prüfungen: Regelungen sind Bundeskompetenz (SchUG)\n• Angebot richtet sich auch nach Möglichkeiten der Schule",
+    "lineOrParagraph": "Antrag 19",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -315,11 +315,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Vorgezogene Prüfungen: Regelungen sind Bundeskompetenz (SchUG) • Angebot richtet sich auch nach Mö..."
   },
   {
-    "id": "antrag_top_20",
+    "id": "antrag_20",
     "type": "AAA",
-    "title": "TOP 20: Lernen für morgen",
-    "content": "Forderung / Beratung zu TOP 20 (Lernen für morgen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Schulautonom/Mitgestaltung des Unterrichts",
-    "lineOrParagraph": "TOP 20",
+    "title": "Antrag 20: Lernen für morgen",
+    "content": "Forderung / Beratung zu Antrag 20 (Lernen für morgen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Schulautonom/Mitgestaltung des Unterrichts",
+    "lineOrParagraph": "Antrag 20",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -330,11 +330,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Schulautonom/Mitgestaltung des Unterrichts..."
   },
   {
-    "id": "antrag_top_21",
+    "id": "antrag_21",
     "type": "EA",
-    "title": "TOP 21: Einmal rundum ehrlich, bitte",
-    "content": "Forderung / Beratung zu TOP 21 (Einmal rundum ehrlich, bitte):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Umsetzung schulautonom\n• Schulleiter als Vorgesetzter verantwortlich für Qualität, allfällige Weiterbildungen etc.",
-    "lineOrParagraph": "TOP 21",
+    "title": "Antrag 21: Einmal rundum ehrlich, bitte",
+    "content": "Forderung / Beratung zu Antrag 21 (Einmal rundum ehrlich, bitte):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Umsetzung schulautonom\n• Schulleiter als Vorgesetzter verantwortlich für Qualität, allfällige Weiterbildungen etc.",
+    "lineOrParagraph": "Antrag 21",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -345,11 +345,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Umsetzung schulautonom • Schulleiter als Vorgesetzter verantwortlich für Qualität, allfällige Weit..."
   },
   {
-    "id": "antrag_top_22",
+    "id": "antrag_22",
     "type": "WM",
-    "title": "TOP 22: Bildung muss bewegen",
-    "content": "Forderung / Beratung zu TOP 22 (Bildung muss bewegen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan – Bundeskompetenz\n• Ausstattung: Anträge an BD/Budget\n• KI: https://www.bmb.gv.at/Themen/schule/zrp/ki.html\n• Politische Bildung als LP-übergreifende Kompetenz",
-    "lineOrParagraph": "TOP 22",
+    "title": "Antrag 22: Bildung muss bewegen",
+    "content": "Forderung / Beratung zu Antrag 22 (Bildung muss bewegen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan – Bundeskompetenz\n• Ausstattung: Anträge an BD/Budget\n• KI: https://www.bmb.gv.at/Themen/schule/zrp/ki.html\n• Politische Bildung als LP-übergreifende Kompetenz",
+    "lineOrParagraph": "Antrag 22",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -360,11 +360,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Lehrplan – Bundeskompetenz • Ausstattung: Anträge an BD/Budget • KI: https://www.bmb.gv.at/Themen/..."
   },
   {
-    "id": "antrag_top_23",
+    "id": "antrag_23",
     "type": "SA",
-    "title": "TOP 23: Vielfalt lehren und leben",
-    "content": "Forderung / Beratung zu TOP 23 (Vielfalt lehren und leben):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• LP ist Bundeskompetenz, zum Teil Bereits in Lehrbüchern enthalten\n• Keine Verpflichtung zu Verwendung geschlechtergerechter Sprache möglich\n• Ggf. schulautonome Schwerpunktsetzung/Unterrichtsgestaltung",
-    "lineOrParagraph": "TOP 23",
+    "title": "Antrag 23: Vielfalt lehren und leben",
+    "content": "Forderung / Beratung zu Antrag 23 (Vielfalt lehren und leben):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• LP ist Bundeskompetenz, zum Teil Bereits in Lehrbüchern enthalten\n• Keine Verpflichtung zu Verwendung geschlechtergerechter Sprache möglich\n• Ggf. schulautonome Schwerpunktsetzung/Unterrichtsgestaltung",
+    "lineOrParagraph": "Antrag 23",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -375,11 +375,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • LP ist Bundeskompetenz, zum Teil Bereits in Lehrbüchern enthalten • Keine Verpflichtung zu Verwend..."
   },
   {
-    "id": "antrag_top_24",
+    "id": "antrag_24",
     "type": "AAA",
-    "title": "TOP 24: Unsichtbar, aber unverzichtbar – unsere Infrastruktur",
-    "content": "Forderung / Beratung zu TOP 24 (Unsichtbar, aber unverzichtbar – unsere Infrastruktur):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Verspätungen können an Busunternehmen gemeldet werden\n• Bedarfserhebung erfolgt grds. bereits im Rahmen der Schülerfreifahrt",
-    "lineOrParagraph": "TOP 24",
+    "title": "Antrag 24: Unsichtbar, aber unverzichtbar – unsere Infrastruktur",
+    "content": "Forderung / Beratung zu Antrag 24 (Unsichtbar, aber unverzichtbar – unsere Infrastruktur):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Verspätungen können an Busunternehmen gemeldet werden\n• Bedarfserhebung erfolgt grds. bereits im Rahmen der Schülerfreifahrt",
+    "lineOrParagraph": "Antrag 24",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -390,11 +390,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Verspätungen können an Busunternehmen gemeldet werden • Bedarfserhebung erfolgt grds. bereits im R..."
   },
   {
-    "id": "antrag_top_25",
+    "id": "antrag_25",
     "type": "EA",
-    "title": "TOP 25: Gratis Mittagessen an Schulen",
-    "content": "Forderung / Beratung zu TOP 25 (Gratis Mittagessen an Schulen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Kantinenbetreiber für Lebensmittel und deren Sicherheit sowie Einhaltung von\nVorschriften verantwortlich\n• Kosten für Zubereitung etc. sind außerdem zu bedenken",
-    "lineOrParagraph": "TOP 25",
+    "title": "Antrag 25: Gratis Mittagessen an Schulen",
+    "content": "Forderung / Beratung zu Antrag 25 (Gratis Mittagessen an Schulen):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Kantinenbetreiber für Lebensmittel und deren Sicherheit sowie Einhaltung von\nVorschriften verantwortlich\n• Kosten für Zubereitung etc. sind außerdem zu bedenken",
+    "lineOrParagraph": "Antrag 25",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -405,11 +405,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Kantinenbetreiber für Lebensmittel und deren Sicherheit sowie Einhaltung von Vorschriften verantwo..."
   },
   {
-    "id": "antrag_top_26",
+    "id": "antrag_26",
     "type": "WM",
-    "title": "TOP 26: Stimmt das wirklich?",
-    "content": "Forderung / Beratung zu TOP 26 (Stimmt das wirklich?):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan – Bundeskompetenz\n• Fake news/Medienbildung als Thema Inhalt von Lehrbüchern und\n(fächerübergreifender) LP-Inhalt\n• Keine Kompetenz der BD für Beurteilung der Objektivität von Medien und allg.\n„Werben“ für bestimmte Medien – ggf. schulinternes Erarbeiten",
-    "lineOrParagraph": "TOP 26",
+    "title": "Antrag 26: Stimmt das wirklich?",
+    "content": "Forderung / Beratung zu Antrag 26 (Stimmt das wirklich?):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Lehrplan – Bundeskompetenz\n• Fake news/Medienbildung als Thema Inhalt von Lehrbüchern und\n(fächerübergreifender) LP-Inhalt\n• Keine Kompetenz der BD für Beurteilung der Objektivität von Medien und allg.\n„Werben“ für bestimmte Medien – ggf. schulinternes Erarbeiten",
+    "lineOrParagraph": "Antrag 26",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -420,11 +420,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Lehrplan – Bundeskompetenz • Fake news/Medienbildung als Thema Inhalt von Lehrbüchern und (fächerü..."
   },
   {
-    "id": "antrag_top_27",
+    "id": "antrag_27",
     "type": "SA",
-    "title": "TOP 27: Demokratie braucht dich – Politische Bildung für Vorarlberg",
-    "content": "Forderung / Beratung zu TOP 27 (Demokratie braucht dich – Politische Bildung für Vorarlberg):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Thema in Lehrbüchern\n• Unterrichtsgestaltung schulautonom, grds. soll Unterricht kompetenzorientiert (LP-\nübergreifende Themen) erfolgen und auf aktuelle Anlässe Bezug nehmen\n• Lernplattform Eduthek oder ggf. schulautonome Sammlung von Materialien\n(Urheberrecht zu beachten)",
-    "lineOrParagraph": "TOP 27",
+    "title": "Antrag 27: Demokratie braucht dich – Politische Bildung für Vorarlberg",
+    "content": "Forderung / Beratung zu Antrag 27 (Demokratie braucht dich – Politische Bildung für Vorarlberg):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Thema in Lehrbüchern\n• Unterrichtsgestaltung schulautonom, grds. soll Unterricht kompetenzorientiert (LP-\nübergreifende Themen) erfolgen und auf aktuelle Anlässe Bezug nehmen\n• Lernplattform Eduthek oder ggf. schulautonome Sammlung von Materialien\n(Urheberrecht zu beachten)",
+    "lineOrParagraph": "Antrag 27",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -435,11 +435,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Thema in Lehrbüchern • Unterrichtsgestaltung schulautonom, grds. soll Unterricht kompetenzorientie..."
   },
   {
-    "id": "antrag_top_28",
+    "id": "antrag_28",
     "type": "AAA",
-    "title": "TOP 28: Vertretung, Vernetzung, Vorarlberg",
-    "content": "Forderung / Beratung zu TOP 28 (Vertretung, Vernetzung, Vorarlberg):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Betrifft grds. LSV intern\n• BD hat für Großteil der Anliegen keine Änderungskompetenz – idR steht Bundesrecht\nentgegen\n• Ggf. Vernetzung mit SQM",
-    "lineOrParagraph": "TOP 28",
+    "title": "Antrag 28: Vertretung, Vernetzung, Vorarlberg",
+    "content": "Forderung / Beratung zu Antrag 28 (Vertretung, Vernetzung, Vorarlberg):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Betrifft grds. LSV intern\n• BD hat für Großteil der Anliegen keine Änderungskompetenz – idR steht Bundesrecht\nentgegen\n• Ggf. Vernetzung mit SQM",
+    "lineOrParagraph": "Antrag 28",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -450,11 +450,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Betrifft grds. LSV intern • BD hat für Großteil der Anliegen keine Änderungskompetenz – idR steht ..."
   },
   {
-    "id": "antrag_top_29",
+    "id": "antrag_29",
     "type": "EA",
-    "title": "TOP 29: So funktioniert Mobbing heute",
-    "content": "Forderung / Beratung zu TOP 29 (So funktioniert Mobbing heute):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Workshops schulautonom umsetzbar\n• Elternarbeit iSv Workshopangebot ist nicht Aufgabe der Schule – ggf. Organisation\ndurch Elternverein/-vertreter privat",
-    "lineOrParagraph": "TOP 29",
+    "title": "Antrag 29: So funktioniert Mobbing heute",
+    "content": "Forderung / Beratung zu Antrag 29 (So funktioniert Mobbing heute):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Workshops schulautonom umsetzbar\n• Elternarbeit iSv Workshopangebot ist nicht Aufgabe der Schule – ggf. Organisation\ndurch Elternverein/-vertreter privat",
+    "lineOrParagraph": "Antrag 29",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -465,11 +465,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Workshops schulautonom umsetzbar • Elternarbeit iSv Workshopangebot ist nicht Aufgabe der Schule –..."
   },
   {
-    "id": "antrag_top_30",
+    "id": "antrag_30",
     "type": "WM",
-    "title": "TOP 30: Mindshift – Räume für innere Ruhe",
-    "content": "Forderung / Beratung zu TOP 30 (Mindshift – Räume für innere Ruhe):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• zT schulautonome Umsetzung möglich\n• grds. Bundessache (Personal)",
-    "lineOrParagraph": "TOP 30",
+    "title": "Antrag 30: Mindshift – Räume für innere Ruhe",
+    "content": "Forderung / Beratung zu Antrag 30 (Mindshift – Räume für innere Ruhe):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• zT schulautonome Umsetzung möglich\n• grds. Bundessache (Personal)",
+    "lineOrParagraph": "Antrag 30",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -480,11 +480,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • zT schulautonome Umsetzung möglich • grds. Bundessache (Personal)..."
   },
   {
-    "id": "antrag_top_31",
+    "id": "antrag_31",
     "type": "AAA",
-    "title": "TOP 31: Der logische Schritt nach vorne – SIP digitalisieren",
-    "content": "Forderung / Beratung zu TOP 31 (Der logische Schritt nach vorne – SIP digitalisieren):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Keine Kommentierung, da keine rechtliche Grundlage/Beschränkung, betrifft nur LSV",
-    "lineOrParagraph": "TOP 31",
+    "title": "Antrag 31: Der logische Schritt nach vorne – SIP digitalisieren",
+    "content": "Forderung / Beratung zu Antrag 31 (Der logische Schritt nach vorne – SIP digitalisieren):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Keine Kommentierung, da keine rechtliche Grundlage/Beschränkung, betrifft nur LSV",
+    "lineOrParagraph": "Antrag 31",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -495,11 +495,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Keine Kommentierung, da keine rechtliche Grundlage/Beschränkung, betrifft nur LSV..."
   },
   {
-    "id": "antrag_top_32",
+    "id": "antrag_32",
     "type": "AAA",
-    "title": "TOP 32: Der Mythos Jugendpartizipation",
-    "content": "Forderung / Beratung zu TOP 32 (Der Mythos Jugendpartizipation):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Betrifft nur LSV\n• Schülervertreterstunden nach § 59b SchUG",
-    "lineOrParagraph": "TOP 32",
+    "title": "Antrag 32: Der Mythos Jugendpartizipation",
+    "content": "Forderung / Beratung zu Antrag 32 (Der Mythos Jugendpartizipation):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• Betrifft nur LSV\n• Schülervertreterstunden nach § 59b SchUG",
+    "lineOrParagraph": "Antrag 32",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",
@@ -510,11 +510,11 @@ export const REAL_SIP_ANTRAEGE: SipAntrag[] = [
     "adminNotes": "BD Vorarlberg: • Betrifft nur LSV • Schülervertreterstunden nach § 59b SchUG..."
   },
   {
-    "id": "antrag_top_33",
+    "id": "antrag_33",
     "type": "EA",
-    "title": "TOP 33: Geschlechtergerechtigkeit und Feminismus",
-    "content": "Forderung / Beratung zu TOP 33 (Geschlechtergerechtigkeit und Feminismus):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• 1. und 3. Punkt: schulautonome Umsetzung\n• Lehrplan: Bundeskompetenz; schulautonome Gestaltungsmöglichkeiten innerhalb\ndieses Rahmens",
-    "lineOrParagraph": "TOP 33",
+    "title": "Antrag 33: Geschlechtergerechtigkeit und Feminismus",
+    "content": "Forderung / Beratung zu Antrag 33 (Geschlechtergerechtigkeit und Feminismus):\n\nOffizielle Prüfung & Stellungnahme der Bildungsdirektion Vorarlberg:\n• 1. und 3. Punkt: schulautonome Umsetzung\n• Lehrplan: Bundeskompetenz; schulautonome Gestaltungsmöglichkeiten innerhalb\ndieses Rahmens",
+    "lineOrParagraph": "Antrag 33",
     "author": "2. SiP 2024/25 Antragsmappe (BD Vorarlberg)",
     "isPreFab": true,
     "status": "approved",

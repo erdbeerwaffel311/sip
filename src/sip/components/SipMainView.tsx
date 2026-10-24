@@ -19,6 +19,8 @@ import {
   Play,
   UserCheck,
   UserX,
+  Clock,
+  XCircle,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -114,21 +116,9 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     }
   }, [isAdminUnlocked, currentMember]);
 
-  // Anträge filtern
+  // Anträge filtern - Alle Mitglieder sehen alle Anträge und deren aktuellen Prüfstatus
   const filteredAntraege = useMemo(() => {
     return session.antraege.filter((item) => {
-      // Wenn der Antrag noch nicht freigegeben ist:
-      // Strategieführung sieht alle; normale Mitglieder sehen nur freigegebene ODER ihre selbst eingereichten
-      if (item.status === 'pending_approval') {
-        if (!isStrategieLeader && item.author !== currentUserName) {
-          return false;
-        }
-      }
-
-      if (item.status === 'rejected') {
-        return false;
-      }
-
       if (typeFilter !== 'ALL' && item.type !== typeFilter) {
         return false;
       }
@@ -155,7 +145,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
       return true;
     });
-  }, [session.antraege, typeFilter, claimFilter, searchQuery, isStrategieLeader, currentUserName]);
+  }, [session.antraege, typeFilter, claimFilter, searchQuery, currentUserName]);
 
   // Zähler für Anträge zur Prüfung
   const pendingCount = useMemo(() => {
@@ -171,12 +161,10 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     return session.antraege.find((a) => a.isActive) || null;
   }, [session.activeAntragId, session.antraege]);
 
-  // Zusatzanträge & Wortmeldungen zu diesem aktiven Antrag
+  // Zusatzanträge & Wortmeldungen zu diesem aktiven Antrag (alle Mitglieder sehen diese samt Status)
   const activeSubAntraege = useMemo(() => {
     if (!activeAntrag) return [];
-    return session.antraege.filter(
-      (a) => a.parentAntragId === activeAntrag.id && a.status === 'approved'
-    );
+    return session.antraege.filter((a) => a.parentAntragId === activeAntrag.id);
   }, [activeAntrag, session.antraege]);
 
   // Handlers
@@ -196,11 +184,12 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     sipRealtime.unclaimAntrag(antragId, currentUserName, settings);
   }
 
-  function handleVoteRecommendationUpdate(rec: { type: VoteType; note: string }) {
+  function handleVoteRecommendationUpdate(rec: { type: VoteType; note: string; isPublished: boolean }) {
     sipRealtime.setVoteRecommendation(
       {
         type: rec.type,
         note: rec.note,
+        isPublished: rec.isPublished,
         updatedBy: currentUserName,
       },
       settings
@@ -797,7 +786,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
                     {/* Top Header Badge */}
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-800">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-black uppercase tracking-wider">
                           <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
                           Aktuell im Plenum aufgerufen
@@ -811,11 +800,16 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         </span>
                       </div>
 
-                      {activeAntrag.lineOrParagraph && (
-                        <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
-                          📍 {activeAntrag.lineOrParagraph}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-sky-300 bg-sky-950/80 border border-sky-500/40 px-3 py-1 rounded-xl shadow-sm">
+                          Antragsteller:in: <strong className="text-white">{activeAntrag.author}</strong>
                         </span>
-                      )}
+                        {activeAntrag.lineOrParagraph && (
+                          <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                            📍 {activeAntrag.lineOrParagraph}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Motion Title & Content */}
@@ -823,7 +817,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       {activeAntrag.title}
                     </h2>
 
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans shadow-inner">
                       {activeAntrag.content}
                     </div>
 
@@ -891,11 +885,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       <div className="flex items-center gap-2 mb-2">
                         <Sparkles className="w-4 h-4 text-sky-400" />
                         <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-sky-300">
-                          Zusatzantrag oder Wortmeldung zu diesem TOP
+                          Zusatzantrag oder Wortmeldung zu diesem Antrag
                         </h4>
                       </div>
                       <p className="text-xs text-slate-400 mb-4">
-                        Möchtest du eine Änderung, Streichung oder Wortmeldung zu diesem aktuellen TOP einbringen?
+                        Möchtest du eine Änderung, Streichung oder Wortmeldung zu diesem aktuellen Antrag einbringen?
                       </p>
 
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
@@ -962,11 +956,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Eingereichte & freigegebene Zusatzanträge zu diesem TOP */}
+                  {/* Eingereichte Zusatzanträge zu diesem Antrag - für alle Mitglieder sichtbar! */}
                   {activeSubAntraege.length > 0 && (
                     <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-xl">
                       <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                        <span>Zusatzanträge zu diesem TOP ({activeSubAntraege.length})</span>
+                        <span>Zusatzanträge zu diesem Antrag ({activeSubAntraege.length})</span>
                       </h3>
                       <div className="space-y-3">
                         {activeSubAntraege.map((sub) => (
@@ -974,14 +968,38 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                             key={sub.id}
                             className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-white"
                           >
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor}`}>
-                                {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel} • {ANTRAG_TYPE_CONFIG[sub.type]?.label}
-                              </span>
-                              <span className="text-[11px] text-slate-400">von {sub.author}</span>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor}`}>
+                                  {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel} • {ANTRAG_TYPE_CONFIG[sub.type]?.label}
+                                </span>
+                                <span className="text-xs font-semibold text-sky-300">
+                                  Antragsteller:in: <strong className="text-white">{sub.author}</strong>
+                                </span>
+                              </div>
+
+                              {/* Live Status Badge */}
+                              {sub.status === 'pending_approval' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
+                                  <Clock className="w-3 h-3 text-amber-400" />
+                                  Bestätigung ausstehend
+                                </span>
+                              ) : sub.status === 'approved' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                  {sub.isEditedByAdmin ? 'Geändert durch Strategieführung' : 'Bestätigt & freigegeben'}
+                                </span>
+                              ) : sub.status === 'rejected' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] font-bold">
+                                  <XCircle className="w-3 h-3 text-rose-400" />
+                                  Von Strategieführung abgelehnt
+                                </span>
+                              ) : null}
                             </div>
-                            <h4 className="font-bold text-sm text-slate-200 mb-1">{sub.title}</h4>
-                            <p className="text-xs text-slate-400 whitespace-pre-wrap">{sub.content}</p>
+                            <h4 className="font-bold text-sm text-slate-100 mb-1.5">{sub.title}</h4>
+                            <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+                              <p className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">{sub.content}</p>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1019,6 +1037,40 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     <Plus className="w-4 h-4" />
                     <span>Antrag / Wortmeldung vorab vorbereiten</span>
                   </button>
+
+                  {/* Eingereichte Anträge aus dem Plenum im Warteraum anzeigen */}
+                  {session.antraege.filter((a) => !a.isPreFab).length > 0 && (
+                    <div className="w-full max-w-2xl mt-8 text-left bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                        Aus dem Plenum eingereichte Anträge:
+                      </h4>
+                      <div className="space-y-2.5">
+                        {session.antraege
+                          .filter((a) => !a.isPreFab)
+                          .map((a) => (
+                            <div key={a.id} className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="font-bold text-slate-200">{a.title}</span>
+                                {a.status === 'pending_approval' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                                    ⏳ Bestätigung ausstehend
+                                  </span>
+                                ) : a.status === 'approved' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                                    {a.isEditedByAdmin ? '✏️ Geändert von Strategieführung' : '✅ Bestätigt'}
+                                  </span>
+                                ) : a.status === 'rejected' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold">
+                                    ❌ Abgelehnt
+                                  </span>
+                                ) : null}
+                              </div>
+                              <span className="text-[11px] text-slate-400">Antragsteller:in: {a.author}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

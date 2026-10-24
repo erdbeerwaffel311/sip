@@ -140,7 +140,7 @@ export const NewAntragModal: React.FC<NewAntragModalProps> = ({
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="z.B. AÄA zu TOP 3: Streichung der Pflichtklausel"
+              placeholder="z.B. ÄA zu Antrag 3: Streichung der Pflichtklausel"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
             />
           </div>

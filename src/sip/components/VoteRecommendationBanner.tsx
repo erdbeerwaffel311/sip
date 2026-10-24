@@ -7,14 +7,15 @@ import {
   Sparkles,
   Edit3,
   Send,
-  Volume2,
+  EyeOff,
+  Radio,
 } from 'lucide-react';
 import { VoteRecommendation, VoteType } from '../types';
 
 interface VoteRecommendationBannerProps {
   recommendation: VoteRecommendation;
   isStrategieLeader: boolean;
-  onUpdateRecommendation: (rec: { type: VoteType; note: string }) => void;
+  onUpdateRecommendation: (rec: { type: VoteType; note: string; isPublished: boolean }) => void;
 }
 
 export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> = ({
@@ -23,8 +24,13 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
   onUpdateRecommendation,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [selectedType, setSelectedType] = useState<VoteType>(recommendation.type);
+  const [selectedType, setSelectedType] = useState<VoteType>(
+    recommendation.type === 'KEINE' ? 'JA' : recommendation.type
+  );
   const [customNote, setCustomNote] = useState(recommendation.note);
+
+  const isPublished = recommendation.isPublished ?? false;
+  const hasActiveRec = recommendation.type !== 'KEINE';
 
   const getStyleForVote = (type: VoteType) => {
     switch (type) {
@@ -77,15 +83,51 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
     }
   };
 
-  const currentStyle = getStyleForVote(recommendation.type);
+  const currentStyle = getStyleForVote(hasActiveRec ? recommendation.type : 'KEINE');
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     onUpdateRecommendation({
       type: selectedType,
       note: customNote.trim(),
+      isPublished: true,
     });
     setIsEditing(false);
+  }
+
+  function handleUnpublish() {
+    onUpdateRecommendation({
+      type: 'KEINE',
+      note: '',
+      isPublished: false,
+    });
+    setIsEditing(false);
+  }
+
+  // 1. Wenn Mitglied und Empfehlung noch nicht veröffentlicht ist:
+  if (!isStrategieLeader && (!isPublished || !hasActiveRec)) {
+    return (
+      <div className="w-full mb-6 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 text-white shadow-xl flex items-center justify-between gap-4 animate-in fade-in">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+            <Radio className="w-6 h-6 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                Debatte läuft
+              </span>
+            </div>
+            <h4 className="text-sm sm:text-base font-bold text-white">
+              Abstimmungsempfehlung folgt im Laufe der Debatte
+            </h4>
+            <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+              Die Strategieführung legt die offizielle Abstimmungsempfehlung während der Redebeiträge fest und sendet sie kurz vor dem Votum an alle Bildschirme.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -103,20 +145,35 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/30 border border-white/20">
-                  Zentrale Strategie
+                  {isPublished ? 'Offizielle Abstimmungsempfehlung' : 'Entwurf (Noch nicht gesendet)'}
                 </span>
-                <span className="text-xs text-white/80">
-                  {new Date(recommendation.updatedAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  Uhr
-                </span>
+
+                {isPublished && (
+                  <span className="text-xs text-white/80">
+                    {new Date(recommendation.updatedAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}{' '}
+                    Uhr
+                  </span>
+                )}
+
+                {isStrategieLeader && (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      isPublished
+                        ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/40'
+                        : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
+                    }`}
+                  >
+                    {isPublished ? '● Live an alle übertragen' : '⏳ Für Mitglieder noch unsichtbar'}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-baseline gap-3">
                 <span className="text-xs sm:text-sm font-semibold opacity-90">
-                  Offizielle Empfehlung:
+                  {isPublished ? 'Empfehlung:' : 'Geplante Empfehlung:'}
                 </span>
                 <span
                   className={`text-2xl sm:text-3xl font-black tracking-tight px-3 py-0.5 rounded-xl shadow-md ${currentStyle.badgeBg}`}
@@ -137,19 +194,31 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
           {isStrategieLeader && (
             <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
               {!isEditing ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedType(recommendation.type);
-                    setCustomNote(recommendation.note);
-                    setIsEditing(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur border border-white/30 text-white text-xs sm:text-sm font-bold transition cursor-pointer"
-                  title="Abstimmungsempfehlung anpassen & zentral pushen"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Empfehlung ändern</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedType(hasActiveRec ? recommendation.type : 'JA');
+                      setCustomNote(recommendation.note);
+                      setIsEditing(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs sm:text-sm transition shadow-lg cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>{isPublished ? 'Empfehlung anpassen' : 'Empfehlung an alle senden'}</span>
+                  </button>
+
+                  {isPublished && (
+                    <button
+                      type="button"
+                      onClick={handleUnpublish}
+                      className="p-2 rounded-xl bg-black/30 hover:bg-black/50 text-white/80 hover:text-white border border-white/20 transition cursor-pointer"
+                      title="Empfehlung zurückziehen (Mitglieder sehen sie nicht mehr)"
+                    >
+                      <EyeOff className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               ) : null}
             </div>
           )}
@@ -159,13 +228,13 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
         {isEditing && isStrategieLeader && (
           <form
             onSubmit={handleSave}
-            className="mt-4 pt-4 border-t border-white/20 bg-black/25 p-4 rounded-xl"
+            className="mt-4 pt-4 border-t border-white/20 bg-black/30 p-4 rounded-2xl space-y-3"
           >
-            <div className="text-xs font-bold uppercase tracking-wider mb-2 text-white/90">
-              Neue Abstimmungsempfehlung an alle Mitglieder senden:
+            <div className="text-xs font-bold uppercase tracking-wider text-white">
+              Abstimmungsempfehlung festlegen & live an alle Mitglieder übertragen:
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(['JA', 'NEIN', 'ENTHALTUNG', 'FREI'] as VoteType[]).map((type) => {
                 const isSelected = selectedType === type;
                 return (
@@ -175,7 +244,7 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
                     onClick={() => setSelectedType(type)}
                     className={`py-2 px-3 rounded-xl font-black text-xs sm:text-sm border transition cursor-pointer flex items-center justify-center gap-1.5 ${
                       isSelected
-                        ? 'bg-white text-slate-950 border-white shadow-md'
+                        ? 'bg-white text-slate-950 border-white shadow-lg'
                         : 'bg-black/30 text-white hover:bg-black/40 border-white/20'
                     }`}
                   >
@@ -188,33 +257,33 @@ export const VoteRecommendationBanner: React.FC<VoteRecommendationBannerProps> =
               })}
             </div>
 
-            <div className="mb-3">
-              <label className="block text-[11px] font-semibold text-white/80 mb-1">
-                Begründung / taktische Notiz für alle Mitglieder:
+            <div>
+              <label className="block text-[11px] font-semibold text-white/90 mb-1">
+                Begründung / taktische Notiz für die Delegierten:
               </label>
               <input
                 type="text"
                 value={customNote}
                 onChange={(e) => setCustomNote(e.target.value)}
-                placeholder="z.B. Unbedingt zustimmen, stärkt unsere Initiative!"
-                className="w-full px-3 py-2 text-xs sm:text-sm rounded-lg bg-black/40 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white"
+                placeholder="z.B. Unbedingt mit JA stimmen – wichtiger Beschluss für Vorarlberg!"
+                className="w-full px-3.5 py-2 text-xs sm:text-sm rounded-xl bg-black/50 border border-white/30 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition"
+                className="px-3.5 py-2 rounded-xl text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition"
               >
                 Abbrechen
               </button>
               <button
                 type="submit"
-                className="flex items-center gap-1 px-4 py-1.5 rounded-lg bg-white text-slate-950 font-bold text-xs sm:text-sm hover:bg-slate-100 transition shadow-md cursor-pointer"
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-white text-slate-950 font-black text-xs sm:text-sm hover:bg-slate-100 transition shadow-lg cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
-                <span>Zentral an alle senden</span>
+                <span>Jetzt live an alle senden</span>
               </button>
             </div>
           </form>

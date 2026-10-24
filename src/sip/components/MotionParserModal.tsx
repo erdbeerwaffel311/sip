@@ -49,7 +49,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
             <div>
               <h2 className="text-lg sm:text-xl font-bold">Anträge aus Dokument importieren</h2>
               <p className="text-xs text-slate-400">
-                Automatische Erkennung von WM, AÄA, EA, SA & GO-Anträgen
+                Automatische Erkennung von WM, ÄA, EA, SA & GO-Anträgen
               </p>
             </div>
           </div>
@@ -75,7 +75,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                 setInputText(e.target.value);
                 setHasScanned(false);
               }}
-              placeholder={`Füge hier den Text aus deinen SiP-Unterlagen ein. Beispiel:\n\n[AÄA] Zu Zeile 45: Streichung von "nur schulische Endgeräte" und Ergänzung von BYOD.\n\n[WM] Wortmeldung Simon zu TOP 4: Mental Health Tage.\n\nAntrag auf Ende der Debatte`}
+              placeholder={`Füge hier den Text aus deinen SiP-Unterlagen ein. Beispiel:\n\n[ÄA] Zu Zeile 45: Streichung von "nur schulische Endgeräte" und Ergänzung von BYOD.\n\n[WM] Wortmeldung Simon zu Antrag 4: Mental Health Tage.\n\nAntrag auf Ende der Debatte`}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
             />
           </div>
@@ -107,7 +107,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 
               {parsedItems.length === 0 ? (
                 <div className="p-4 rounded-2xl bg-slate-950 text-center text-xs text-slate-400">
-                  Keine Anträge mit Standard-Kennungen (WM, AÄA, EA, SA, Ende Debatte etc.) gefunden.
+                  Keine Anträge mit Standard-Kennungen (WM, ÄA, EA, SA, Ende Debatte etc.) gefunden.
                 </div>
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto">

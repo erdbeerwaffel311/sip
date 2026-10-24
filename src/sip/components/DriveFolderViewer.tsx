@@ -141,7 +141,7 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
               Anträge automatisch aus Google Docs einlesen
             </h4>
             <p className="text-xs text-slate-300">
-              Kopiere einfach Text aus den Google Drive Dokumenten – das System erkennt WM, AÄA, EA, SA und GO-Anträge automatisch!
+              Kopiere einfach Text aus den Google Drive Dokumenten – das System erkennt WM, ÄA, EA, SA und GO-Anträge automatisch!
             </p>
           </div>
         </div>

@@ -46,11 +46,9 @@ export function getSupabaseClient(settings?: Partial<AppSettings> | null): Supab
 
 /**
  * Einheitliche SiP-Tabelle in Supabase:
- * Wir setzen durchgehend auf 'keller_items', da diese Tabelle in Supabase
- * bereits existiert, alle aktuellen SiP-Daten enthält und für Realtime freigeschaltet ist.
- * (Kann bei Bedarf über diesen Bezeichner zentral auf z.B. 'sip_items' geändert werden).
+ * Wir setzen durchgehend auf 'sip_state' mit den Spalten id (Text) und payload (JSONB).
  */
-export const SIP_DATABASE_TABLE = 'keller_items';
+export const SIP_DATABASE_TABLE = 'sip_state';
 
 /**
  * Universelle Abfrage für SiP-Datensätze aus der einheitlichen Tabelle.
@@ -79,19 +77,16 @@ export async function upsertSipRow(
   client: SupabaseClient,
   row: {
     id: string;
-    name: string;
+    payload: any;
+    name?: string;
     category?: string;
     quantity?: number;
-    payload: any;
   }
 ): Promise<{ success: boolean; error?: any; tableUsed: string }> {
   const record = {
     id: row.id,
-    name: row.name,
-    category: row.category || '__sip_system__',
-    quantity: row.quantity ?? 1,
-    updated_at: new Date().toISOString(),
     payload: row.payload,
+    updated_at: new Date().toISOString(),
   };
 
   try {
@@ -123,16 +118,13 @@ export async function sendAdmin2FAEmail(
   const backupCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  // Speichere in Supabase (sip_items mit Fallback auf keller_items)
+  // Speichere in Supabase (sip_state)
   try {
     const { data: currentRecord } = await querySipRow(client, SIP_CONFIG_ROW_ID);
     const payload = currentRecord?.payload || {};
 
     await upsertSipRow(client, {
       id: SIP_CONFIG_ROW_ID,
-      name: 'SiP Benutzerkonten & Einstellungen',
-      category: '__sip_system__',
-      quantity: settings.memberAccounts.length,
       payload: {
         ...payload,
         twoFactorToken: {

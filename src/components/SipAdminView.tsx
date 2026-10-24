@@ -40,33 +40,18 @@ import {
   formatSecretForDisplay,
 } from '../utils/totp';
 
-export const SIP_MIGRATION_SQL = `-- 1. Neue dedizierte SiP-Tabelle erstellen
-CREATE TABLE IF NOT EXISTS public.sip_items (
+export const SIP_MIGRATION_SQL = `-- Dedizierte SiP-Tabelle erstellen
+CREATE TABLE IF NOT EXISTS public.sip_state (
     id TEXT PRIMARY KEY,
-    name TEXT,
-    category TEXT,
-    quantity NUMERIC DEFAULT 1,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    payload JSONB
+    payload JSONB,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Bestehende SiP-Daten aus keller_items übertragen
-INSERT INTO public.sip_items (id, name, category, quantity, updated_at, payload)
-SELECT id, name, category, quantity, updated_at, payload
-FROM public.keller_items
-WHERE id LIKE '__sip_%'
-ON CONFLICT (id) DO UPDATE 
-SET name = EXCLUDED.name,
-    category = EXCLUDED.category,
-    quantity = EXCLUDED.quantity,
-    updated_at = EXCLUDED.updated_at,
-    payload = EXCLUDED.payload;
-
--- 3. RLS & Realtime für sip_items aktivieren
-ALTER TABLE public.sip_items ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow public all access on sip_items" ON public.sip_items;
-CREATE POLICY "Allow public all access on sip_items" ON public.sip_items FOR ALL USING (true) WITH CHECK (true);
-ALTER PUBLICATION supabase_realtime ADD TABLE public.sip_items;`;
+-- RLS & Realtime für sip_state aktivieren
+ALTER TABLE public.sip_state ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public all access on sip_state" ON public.sip_state;
+CREATE POLICY "Allow public all access on sip_state" ON public.sip_state FOR ALL USING (true) WITH CHECK (true);
+ALTER PUBLICATION supabase_realtime ADD TABLE public.sip_state;`;
 
 interface SipAdminViewProps {
   settings: AppSettings;
@@ -1031,28 +1016,27 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
             </button>
           </form>
 
-          {/* Supabase Tabellen-Migration (sip_items vs. keller_items) */}
+          {/* Supabase Tabellen-Architektur (sip_state) */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4 text-xs sm:text-sm">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-base">Datenbank-Tabellen & Migration</h3>
+                <h3 className="font-bold text-base">Datenbank-Tabelle (sip_state)</h3>
                 <p className="text-xs text-slate-400">
-                  Übergang von <code className="text-amber-300">keller_items</code> zur sauberen SiP-Tabelle <code className="text-sky-300">sip_items</code>
+                  Dedizierte SiP-Tabelle <code className="text-sky-300">sip_state</code> für das Schüler:innenparlament
                 </p>
               </div>
             </div>
 
             <div className="space-y-2 text-xs text-slate-300 leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800">
               <p>
-                <strong>Hintergrund:</strong> Die Tabellennamen <code className="text-slate-400">keller_items</code> und <code className="text-slate-400">keller_transactions</code> stammen aus der ursprünglichen Vereinskeller-App, die denselben Supabase-Account genutzt hat.
+                <strong>Architektur:</strong> Das Schüler:innenparlament nutzt die eigenständige Tabelle <code className="text-sky-300">sip_state</code> mit den Spalten <code className="text-emerald-300">id</code> und <code className="text-emerald-300">payload</code>.
               </p>
               <ul className="list-disc list-inside space-y-1 text-slate-300 pt-1">
-                <li><strong className="text-emerald-300">Aktive SiP-Tabelle (keller_items):</strong> Der Programmcode liest, schreibt und lauscht via Realtime einheitlich und direkt auf <code className="text-emerald-300">keller_items</code>. Die Live-Daten und Benutzerkonten sind sofort synchron.</li>
-                <li><strong className="text-rose-300">keller_transactions:</strong> Wird im SiP-Parlament zu <strong>100% nicht verwendet</strong> und kann ignoriert oder in Supabase gelöscht werden.</li>
-                <li><strong className="text-sky-300">Optionale Migration auf sip_items:</strong> Falls du die Tabelle in Supabase sauber umbenennen möchtest, führe das SQL-Skript unten aus.</li>
+                <li><strong className="text-emerald-300">Aktive SiP-Tabelle (sip_state):</strong> Der Programmcode liest, schreibt und lauscht via Realtime einheitlich und direkt auf <code className="text-emerald-300">sip_state</code>.</li>
+                <li><strong className="text-sky-300">Echtzeit-Synchronisation:</strong> Änderungen werden sofort per Supabase Realtime an alle verbundenen Plenar-Geräte übertragen.</li>
               </ul>
             </div>
 

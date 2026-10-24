@@ -164,7 +164,7 @@ export const App: React.FC = () => {
     setSettings(newSettings);
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
 
-    // Persistiere in Supabase (sip_items mit Fallback auf keller_items)
+    // Persistiere in Supabase (sip_state)
     const client = getSupabaseClient(newSettings);
     if (client) {
       try {
@@ -173,9 +173,6 @@ export const App: React.FC = () => {
 
         await upsertSipRow(client, {
           id: '__sip_users_config__',
-          name: 'SiP Benutzerkonten & Einstellungen',
-          category: '__sip_system__',
-          quantity: newSettings.memberAccounts.length,
           payload: {
             ...oldPayload,
             memberAccounts: newSettings.memberAccounts,

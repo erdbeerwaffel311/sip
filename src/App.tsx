@@ -5,104 +5,144 @@ import {
   ShieldAlert,
   User,
   Settings as SettingsIcon,
-  Radio,
-  Check,
-  X,
+  LogOut,
   Users,
+  Key,
 } from 'lucide-react';
-import { AppSettings, DEFAULT_ALLOWED_MEMBERS, DEFAULT_SIP_SETTINGS, MemberAccount } from './types';
+import {
+  AppSettings,
+  DEFAULT_ALLOWED_MEMBERS,
+  DEFAULT_SIP_SETTINGS,
+  isAccountExpired,
+  MemberAccount,
+} from './types';
+import { SipLoginView } from './components/SipLoginView';
+import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
+import { getSupabaseClient } from './utils/supabaseSync';
 
 const STORAGE_KEYS = {
-  SETTINGS: 'sip_standalone_settings_v1',
-  MEMBER: 'sip_current_user_v1',
-  ADMIN_UNLOCKED: 'sip_admin_unlocked_v1',
+  SETTINGS: 'sip_standalone_settings_v2',
+  LOGGED_USER: 'sip_logged_in_user_v2',
+  ADMIN_UNLOCKED: 'sip_admin_unlocked_v2',
 };
 
 export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return saved ? { ...DEFAULT_SIP_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SIP_SETTINGS;
-    } catch {
-      return DEFAULT_SIP_SETTINGS;
-    }
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_SIP_SETTINGS, ...parsed };
+      }
+    } catch {}
+    return DEFAULT_SIP_SETTINGS;
   });
 
-  const [currentMember, setCurrentMember] = useState<MemberAccount | null>(() => {
+  const [currentUser, setCurrentUser] = useState<MemberAccount | null>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS.MEMBER);
-      if (saved) return JSON.parse(saved);
+      const saved = localStorage.getItem(STORAGE_KEYS.LOGGED_USER);
+      if (saved) {
+        const acc = JSON.parse(saved) as MemberAccount;
+        if (!isAccountExpired(acc)) return acc;
+      }
     } catch {}
-    return {
-      name: 'Simon Märker',
-      username: 'simon.maerker@schuelerunion.at',
-    };
+    return null;
   });
 
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEYS.ADMIN_UNLOCKED) === 'true';
   });
 
-  const [showMemberModal, setShowMemberModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [currentView, setCurrentView] = useState<'parliament' | 'admin'>('parliament');
 
-  // Name selection state
-  const [nameInput, setNameInput] = useState(currentMember?.name || '');
-  const [adminPassInput, setAdminPassInput] = useState('');
+  // Cloud Sync für Einstellungen & Accounts
+  useEffect(() => {
+    const client = getSupabaseClient(settings);
+    if (!client) return;
 
-  // Settings form state
-  const [supabaseUrlInput, setSupabaseUrlInput] = useState(settings.supabaseUrl);
-  const [supabaseKeyInput, setSupabaseKeyInput] = useState(settings.supabaseAnonKey);
+    // Lade neuesten Stand der Benutzerkonten aus Supabase
+    async function fetchUsers() {
+      try {
+        const { data, error } = await client!
+          .from('keller_items')
+          .select('*')
+          .eq('id', '__sip_users_config__')
+          .maybeSingle();
 
-  function handleSaveMember(e: React.FormEvent) {
-    e.preventDefault();
-    const clean = nameInput.trim();
-    if (!clean) return;
+        if (!error && data?.payload?.memberAccounts) {
+          setSettings((prev) => ({
+            ...prev,
+            memberAccounts: data.payload.memberAccounts,
+            adminPassword: data.payload.adminPassword || prev.adminPassword,
+          }));
+        }
+      } catch {}
+    }
+    fetchUsers();
+  }, [settings.supabaseUrl, settings.supabaseAnonKey]);
 
-    const acc: MemberAccount = {
-      name: clean,
-      username: clean.toLowerCase().replace(/\s+/g, '.') + '@schuelerunion.at',
-    };
-    setCurrentMember(acc);
-    localStorage.setItem(STORAGE_KEYS.MEMBER, JSON.stringify(acc));
-    setShowMemberModal(false);
-  }
+  async function handleSaveSettings(newSettings: AppSettings) {
+    setSettings(newSettings);
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
 
-  function handleToggleAdmin() {
-    if (isAdminUnlocked) {
-      setIsAdminUnlocked(false);
-      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'false');
-    } else {
-      const entered = prompt('Passwort für die Strategieführung (Admin):');
-      if (entered === settings.adminPassword || entered === 'admin' || entered === 'strategie2026') {
-        setIsAdminUnlocked(true);
-        localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-      } else if (entered !== null) {
-        alert('Falsches Passwort!');
-      }
+    // Persistiere in Supabase
+    const client = getSupabaseClient(newSettings);
+    if (client) {
+      try {
+        await client.from('keller_items').upsert({
+          id: '__sip_users_config__',
+          name: 'SiP Benutzerkonten & Gäste',
+          category: '__sip_system__',
+          quantity: newSettings.memberAccounts.length,
+          updated_at: new Date().toISOString(),
+          payload: {
+            memberAccounts: newSettings.memberAccounts,
+            adminPassword: newSettings.adminPassword,
+          },
+        });
+      } catch {}
     }
   }
 
-  function handleSaveSettings(e: React.FormEvent) {
-    e.preventDefault();
-    const updated = {
-      ...settings,
-      supabaseUrl: supabaseUrlInput.trim(),
-      supabaseAnonKey: supabaseKeyInput.trim(),
-    };
-    setSettings(updated);
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
-    setShowSettingsModal(false);
-    window.location.reload();
+  function handleLoginSuccess(account: MemberAccount, isLeader: boolean) {
+    setCurrentUser(account);
+    localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(account));
+    if (isLeader) {
+      setIsAdminUnlocked(true);
+      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
+    }
   }
 
+  function handleLogout() {
+    setCurrentUser(null);
+    setIsAdminUnlocked(false);
+    setCurrentView('parliament');
+    localStorage.removeItem(STORAGE_KEYS.LOGGED_USER);
+    localStorage.removeItem(STORAGE_KEYS.ADMIN_UNLOCKED);
+  }
+
+  // 1. Vorgeschaltetes Login-Fenster wenn nicht angemeldet
+  if (!currentUser) {
+    return (
+      <SipLoginView
+        memberAccounts={settings.memberAccounts}
+        adminPassword={settings.adminPassword}
+        onLoginSuccess={handleLoginSuccess}
+      />
+    );
+  }
+
+  // 2. Angemeldeter Bereich
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-slate-950">
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur border-b border-slate-800">
         <div className="max-w-5xl mx-auto px-3 sm:px-6 py-2.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
+          <div
+            onClick={() => setCurrentView('parliament')}
+            className="flex items-center gap-2.5 cursor-pointer"
+          >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 shrink-0">
               <Gavel className="w-5 h-5" />
             </div>
@@ -117,52 +157,44 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* User switch button */}
-            <button
-              type="button"
-              onClick={() => {
-                setNameInput(currentMember?.name || '');
-                setShowMemberModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 transition cursor-pointer"
-              title="Benutzer / Namen wechseln"
-            >
+            {/* View Switch: Parlament vs. Admin-Bereich */}
+            {(isAdminUnlocked || currentUser.role === 'strategie') && (
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentView(currentView === 'admin' ? 'parliament' : 'admin')
+                }
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
+                  currentView === 'admin'
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                    : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>{currentView === 'admin' ? 'Zum Parlament' : 'Admin & Gäste'}</span>
+              </button>
+            )}
+
+            {/* User badge */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-xs text-slate-200">
               <User className="w-3.5 h-3.5 text-sky-400" />
-              <span className="font-semibold">{currentMember?.name || 'Gast'}</span>
-            </button>
-
-            {/* Leadership Toggle */}
-            <button
-              type="button"
-              onClick={handleToggleAdmin}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition cursor-pointer border ${
-                isAdminUnlocked
-                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400'
-              }`}
-              title="Strategieführung freischalten"
-            >
-              {isAdminUnlocked ? (
-                <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Strategieführung</span>
-                </>
-              ) : (
-                <>
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Führung</span>
-                </>
+              <span className="font-semibold">{currentUser.name}</span>
+              {currentUser.isExternal && (
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.2 rounded font-bold">
+                  Gast
+                </span>
               )}
-            </button>
+            </div>
 
-            {/* Settings button */}
+            {/* Logout button */}
             <button
               type="button"
-              onClick={() => setShowSettingsModal(true)}
-              className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition cursor-pointer"
-              title="Einstellungen & Cloud-Sync"
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-rose-500/20 border border-slate-700 hover:border-rose-500/40 text-slate-300 hover:text-rose-300 text-xs font-medium transition cursor-pointer"
+              title="Abmelden"
             >
-              <SettingsIcon className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Abmelden</span>
             </button>
           </div>
         </div>
@@ -170,155 +202,25 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 py-4">
-        <SipMainView
-          settings={settings}
-          currentMember={currentMember}
-          isAdminUnlocked={isAdminUnlocked}
-        />
+        {currentView === 'admin' ? (
+          <SipAdminView
+            settings={settings}
+            onUpdateSettings={handleSaveSettings}
+            onClose={() => setCurrentView('parliament')}
+          />
+        ) : (
+          <SipMainView
+            settings={settings}
+            currentMember={currentUser}
+            isAdminUnlocked={isAdminUnlocked || currentUser.role === 'strategie'}
+          />
+        )}
       </main>
 
       {/* Footer */}
       <footer className="py-4 text-center text-xs text-slate-500 border-t border-slate-900">
-        Schüler:innenparlament (SiP) Live-Tool • Echtzeit-Synchronisation für Anträge, Empfehlungen & Memes
+        Schüler:innenparlament (SiP) • Angemeldet als <strong>{currentUser.name}</strong> ({currentUser.username})
       </footer>
-
-      {/* Member Selection Modal */}
-      {showMemberModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-white">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-sky-400" />
-                <h3 className="font-bold text-base">Deinen Namen auswählen</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowMemberModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveMember} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Name eingeben oder aus Liste wählen:
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  placeholder="z.B. Simon Märker"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:outline-none focus:border-sky-500 mb-3"
-                />
-
-                <div className="max-h-48 overflow-y-auto space-y-1 pr-1 border border-slate-800/80 rounded-xl p-2 bg-slate-950/50">
-                  {DEFAULT_ALLOWED_MEMBERS.map((member) => (
-                    <button
-                      key={member}
-                      type="button"
-                      onClick={() => setNameInput(member)}
-                      className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition cursor-pointer flex items-center justify-between ${
-                        nameInput === member
-                          ? 'bg-sky-500 text-slate-950 font-bold'
-                          : 'hover:bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      <span>{member}</span>
-                      {nameInput === member && <Check className="w-3.5 h-3.5" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowMemberModal(false)}
-                  className="px-4 py-2 text-xs text-slate-400 hover:text-white"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow-md cursor-pointer"
-                >
-                  Speichern
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Settings Modal */}
-      {showSettingsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-white">
-            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <SettingsIcon className="w-5 h-5 text-sky-400" />
-                <h3 className="font-bold text-base">SiP Einstellungen & Cloud-Sync</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                className="p-1.5 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Supabase Project URL
-                </label>
-                <input
-                  type="text"
-                  value={supabaseUrlInput}
-                  onChange={(e) => setSupabaseUrlInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Supabase Anon Key
-                </label>
-                <input
-                  type="text"
-                  value={supabaseKeyInput}
-                  onChange={(e) => setSupabaseKeyInput(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] leading-relaxed">
-                Über diese Supabase-Instanz werden alle Anträge, Claims, Popups und Memes in Echtzeit zwischen allen Smartphones und Laptops im Parlament synchronisiert.
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowSettingsModal(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white"
-                >
-                  Abbrechen
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold shadow-md cursor-pointer"
-                >
-                  Speichern
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

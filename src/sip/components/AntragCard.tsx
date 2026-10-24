@@ -54,12 +54,12 @@ export const AntragCard: React.FC<AntragCardProps> = ({
     <div
       id={`antrag-${antrag.id}`}
       onClick={() => {
-        if (isStrategieLeader) {
+        if (isStrategieLeader && antrag.type === 'HAUPTANTRAG') {
           onActivate(antrag);
         }
       }}
       className={`relative rounded-2xl border transition-all duration-300 p-4 sm:p-5 ${
-        isStrategieLeader ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
+        isStrategieLeader && antrag.type === 'HAUPTANTRAG' ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
       } ${
         antrag.isActive
           ? 'bg-slate-900 border-sky-400 ring-2 ring-sky-400/40 shadow-xl shadow-sky-500/10'
@@ -333,24 +333,26 @@ export const AntragCard: React.FC<AntragCardProps> = ({
             {/* Strategieführung Controls */}
             {isStrategieLeader && (
               <div className="flex items-center gap-1.5 border-l border-slate-800 pl-2">
-                {!antrag.isActive ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onActivate(antrag);
-                    }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/25 transition cursor-pointer"
-                    title="Im Plenum aufrufen (Bestätigungsfenster)"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Aufrufen</span>
-                  </button>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    Aktiv
-                  </span>
+                {antrag.type === 'HAUPTANTRAG' && (
+                  !antrag.isActive ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onActivate(antrag);
+                      }}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs shadow-md shadow-sky-500/25 transition cursor-pointer"
+                      title="Hauptantrag im Plenum aufrufen (Bestätigungsfenster)"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Aufrufen</span>
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      Aktiv
+                    </span>
+                  )
                 )}
 
                 <button

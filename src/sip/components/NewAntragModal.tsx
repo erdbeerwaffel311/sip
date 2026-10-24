@@ -74,7 +74,7 @@ export const NewAntragModal: React.FC<NewAntragModalProps> = ({
           <div className="mb-4 p-3 rounded-2xl bg-sky-500/10 border border-sky-500/30 flex items-center gap-2.5 text-xs text-sky-300">
             <Info className="w-4 h-4 shrink-0 text-sky-400" />
             <span>
-              Bezieht sich auf aktuellen TOP: <strong>{parentAntrag.title}</strong>
+              Bezieht sich auf aktuellen Antrag: <strong>{parentAntrag.title}</strong>
             </span>
           </div>
         )}

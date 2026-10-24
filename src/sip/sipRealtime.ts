@@ -469,10 +469,20 @@ class SipRealtimeService {
         updatedBy: 'Strategieführung',
         isPublished: false,
       },
-      antraege: this.currentSession.antraege.map((a) => ({
-        ...a,
-        isActive: a.id === antragId,
-      })),
+      antraege: this.currentSession.antraege.map((a) => {
+        if (a.type === 'ENDE_DEBATTE' || a.type === 'ENDE_REDNER') {
+          return {
+            ...a,
+            isActive: false,
+            claimedBy: null,
+            claimedAt: null,
+          };
+        }
+        return {
+          ...a,
+          isActive: a.id === antragId,
+        };
+      }),
       updatedAt: new Date().toISOString(),
     };
     this.saveToStorage();

@@ -153,6 +153,7 @@ export const DEFAULT_SIP_SETTINGS: AppSettings = {
     isExternal: false,
     expiresAt: null,
   })),
-  supabaseUrl: 'https://zdduvvluqairhnbdbunk.supabase.co',
-  supabaseAnonKey: 'sb_publishable_CEjKQudAlYxYtTvykEwDxw_E4KvyUhC',
+  supabaseUrl: 'https://ofdqsfkuxiikxygthnov.supabase.co',
+  supabaseAnonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mZHFzZmt1eGlpa3h5Z3Robm92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MzYzMzAsImV4cCI6MjEwODQxMjMzMH0.xU0FNyWPpmA7A25UqOFcbV3QeAA6T3xk4dV25HdqImk',
 };

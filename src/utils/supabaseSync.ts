@@ -17,16 +17,13 @@ export function normalizeSupabaseUrl(rawUrl: string | undefined): string {
   return rawUrl.trim().replace(/\/rest\/v1\/?.*$/i, '').replace(/\/+$/, '');
 }
 
-export const DEFAULT_SUPABASE_URL = 'https://zdduvvluqairhnbdbunk.supabase.co';
-export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_CEjKQudAlYxYtTvykEwDxw_E4KvyUhC';
+export const DEFAULT_SUPABASE_URL = 'https://ofdqsfkuxiikxygthnov.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mZHFzZmt1eGlpa3h5Z3Robm92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MzYzMzAsImV4cCI6MjEwODQxMjMzMH0.xU0FNyWPpmA7A25UqOFcbV3QeAA6T3xk4dV25HdqImk';
 
-export function getSupabaseClient(settings?: Partial<AppSettings> | null): SupabaseClient | null {
-  const rawUrl = settings?.supabaseUrl?.trim() || DEFAULT_SUPABASE_URL;
-  const rawKey = settings?.supabaseAnonKey?.trim() || DEFAULT_SUPABASE_ANON_KEY;
-
-  const url = normalizeSupabaseUrl(rawUrl);
-  const key = rawKey;
-  if (!url || !key) return null;
+export function getSupabaseClient(_settings?: Partial<AppSettings> | null): SupabaseClient | null {
+  const url = DEFAULT_SUPABASE_URL;
+  const key = DEFAULT_SUPABASE_ANON_KEY;
 
   const cacheToken = `${url}::${key}`;
   if (cachedClient && cachedKey === cacheToken) {

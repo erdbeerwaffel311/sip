@@ -92,7 +92,15 @@ export const NewAntragModal: React.FC<NewAntragModalProps> = ({
               Antragstyp wählen
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(Object.keys(ANTRAG_TYPE_CONFIG) as AntragType[]).map((t) => {
+              {(Object.keys(ANTRAG_TYPE_CONFIG) as AntragType[])
+                .filter((t) => {
+                  // GO-Anträge sind keine Nebenanträge und können nicht als Nebenantrag geschrieben werden
+                  if (parentAntrag && (t === 'ENDE_DEBATTE' || t === 'ENDE_REDNER' || t === 'HAUPTANTRAG')) {
+                    return false;
+                  }
+                  return true;
+                })
+                .map((t) => {
                 const conf = ANTRAG_TYPE_CONFIG[t];
                 const isSelected = type === t;
                 return (

@@ -29,6 +29,9 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  History,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -58,7 +61,7 @@ interface SipMainViewProps {
   isAdminUnlocked: boolean;
 }
 
-export type SipSubTab = 'antraege' | 'strategy' | 'drive' | 'memes' | 'archive';
+export type SipSubTab = 'antraege' | 'past_antraege' | 'strategy' | 'drive' | 'memes' | 'archive';
 
 export const SipMainView: React.FC<SipMainViewProps> = ({
   settings,
@@ -67,6 +70,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 }) => {
   const [session, setSession] = useState<SipSession>(() => sipRealtime.getSession());
   const [currentSubTab, setCurrentSubTab] = useState<SipSubTab>('antraege');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isStrategieLeader, setIsStrategieLeader] = useState<boolean>(
     () => isAdminUnlocked || currentMember?.role === 'strategie' || currentMember?.role === 'admin'
   );
@@ -170,12 +174,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     });
   }, [session.antraege, typeFilter, claimFilter, searchQuery, currentUserName]);
 
-  // 1. Hauptanträge im Plenum (nur Typ HAUPTANTRAG)
-  const hauptAntraege = useMemo(() => {
-    return filteredAntraege.filter((item) => item.type === 'HAUPTANTRAG');
-  }, [filteredAntraege]);
-
-
   // Aktuell im Plenum aufgerufener Antrag
   const activeAntrag = useMemo(() => {
     if (session.activeAntragId) {
@@ -184,6 +182,68 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     }
     return session.antraege.find((a) => a.isActive) || null;
   }, [session.activeAntragId, session.antraege]);
+
+  // Timer & Fadeout für aktiven Antrag bei Entscheidung (ANGENOMMEN / ABGELEHNT)
+  const [decisionNow, setDecisionNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!activeAntrag?.plenumResult || !activeAntrag?.plenumResultAt) return;
+
+    const interval = setInterval(() => {
+      setDecisionNow(Date.now());
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [activeAntrag?.plenumResult, activeAntrag?.plenumResultAt]);
+
+  const DECISION_FADE_DURATION_MS = 3000; // 3 Sekunden (Fadeouttimer)
+  const decisionElapsedMs =
+    activeAntrag?.plenumResult && activeAntrag?.plenumResultAt
+      ? Math.max(0, decisionNow - new Date(activeAntrag.plenumResultAt).getTime())
+      : 0;
+  const isDecisionExpired = decisionElapsedMs >= DECISION_FADE_DURATION_MS;
+  const decisionRemainingSeconds = Math.max(
+    0,
+    Math.ceil((DECISION_FADE_DURATION_MS - decisionElapsedMs) / 1000)
+  );
+  // Linearer Übergang von 1 auf 0 über 3 Sekunden
+  const decisionOpacity = activeAntrag?.plenumResult
+    ? Math.max(0, 1 - decisionElapsedMs / DECISION_FADE_DURATION_MS)
+    : 1;
+
+  // Wenn 3 Sekunden abgelaufen sind, beendet die Strategieführung automatisch den Aufruf
+  useEffect(() => {
+    if (isStrategieLeader && activeAntrag?.plenumResult && isDecisionExpired) {
+      handleClearActiveAntrag();
+    }
+  }, [isStrategieLeader, activeAntrag?.plenumResult, isDecisionExpired]);
+
+  // 1. Hauptanträge im Plenum (nur Typ HAUPTANTRAG, die noch nicht entschieden/ausgefadet sind)
+  const hauptAntraege = useMemo(() => {
+    return filteredAntraege.filter((item) => {
+      if (item.type !== 'HAUPTANTRAG') return false;
+      // In der Normalansicht sind ausgefadete/entschiedene Anträge nicht mehr sichtbar
+      if (item.plenumResult) return false;
+      return true;
+    });
+  }, [filteredAntraege]);
+
+  // Vergangene Hauptanträge (vom Plenum entschieden & ausgefadet)
+  const pastHauptAntraege = useMemo(() => {
+    return (session.antraege || [])
+      .filter((a) => {
+        if (a.type !== 'HAUPTANTRAG') return false;
+        if (!a.plenumResult) return false;
+        // Wenn noch im 3s-Fadeout und aktiv, bleibt er noch kurz im aktiven Live-Block der Normalansicht
+        if (a.id === activeAntrag?.id && !isDecisionExpired) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const timeA = a.plenumResultAt ? new Date(a.plenumResultAt).getTime() : 0;
+        const timeB = b.plenumResultAt ? new Date(b.plenumResultAt).getTime() : 0;
+        return timeB - timeA;
+      });
+  }, [session.antraege, activeAntrag?.id, isDecisionExpired]);
 
   // Anträge zur Prüfung für Strategieführung (während der Pause keine Nebenanträge zu vergangenen Hauptanträgen)
   const pendingAntraege = useMemo(() => {
@@ -258,41 +318,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   const rejectedCount = useMemo(() => {
     return session.antraege.filter((a) => a.plenumResult === 'ABGELEHNT').length;
   }, [session.antraege]);
-
-  // Timer & Fadeout für aktiven Antrag bei Entscheidung (ANGENOMMEN / ABGELEHNT)
-  const [decisionNow, setDecisionNow] = useState<number>(() => Date.now());
-
-  useEffect(() => {
-    if (!activeAntrag?.plenumResult || !activeAntrag?.plenumResultAt) return;
-
-    const interval = setInterval(() => {
-      setDecisionNow(Date.now());
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [activeAntrag?.plenumResult, activeAntrag?.plenumResultAt]);
-
-  const DECISION_FADE_DURATION_MS = 10000; // 10 Sekunden
-  const decisionElapsedMs =
-    activeAntrag?.plenumResult && activeAntrag?.plenumResultAt
-      ? Math.max(0, decisionNow - new Date(activeAntrag.plenumResultAt).getTime())
-      : 0;
-  const isDecisionExpired = decisionElapsedMs >= DECISION_FADE_DURATION_MS;
-  const decisionRemainingSeconds = Math.max(
-    0,
-    Math.ceil((DECISION_FADE_DURATION_MS - decisionElapsedMs) / 1000)
-  );
-  // Linearer Übergang von 1 auf 0 über 10 Sekunden
-  const decisionOpacity = activeAntrag?.plenumResult
-    ? Math.max(0, 1 - decisionElapsedMs / DECISION_FADE_DURATION_MS)
-    : 1;
-
-  // Wenn 10 Sekunden abgelaufen sind, beendet die Strategieführung automatisch den Aufruf
-  useEffect(() => {
-    if (isStrategieLeader && activeAntrag?.plenumResult && isDecisionExpired) {
-      handleClearActiveAntrag();
-    }
-  }, [isStrategieLeader, activeAntrag?.plenumResult, isDecisionExpired]);
 
   // Handlers
   async function handleActivateAntrag(antragId: string) {
@@ -669,99 +694,183 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         onUpdateRecommendation={handleVoteRecommendationUpdate}
       />
 
-      {/* Subtabs Navigation */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-800 scrollbar-none">
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('antraege')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-            currentSubTab === 'antraege'
-              ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-              : 'text-slate-300 hover:bg-slate-800'
+      {/* Main Content Area with Collapsible Left Sidebar */}
+      <div className="flex flex-col md:flex-row items-start gap-5">
+        {/* Collapsible Left Sidebar */}
+        <aside
+          className={`transition-all duration-300 shrink-0 bg-slate-900/90 border border-slate-800 rounded-3xl p-3 sm:p-3.5 shadow-xl backdrop-blur ${
+            isSidebarCollapsed ? 'w-full md:w-16' : 'w-full md:w-60'
           }`}
         >
-          <Gavel className="w-4 h-4" />
-          <span>Anträge & Wortmeldungen</span>
-          <span
-            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              currentSubTab === 'antraege'
-                ? 'bg-slate-950 text-sky-300'
-                : 'bg-slate-800 text-slate-400'
+          {/* Sidebar Header & Toggle */}
+          <div
+            className={`flex items-center justify-between pb-2.5 mb-2 border-b border-slate-800/80 px-1.5 ${
+              isSidebarCollapsed ? 'md:justify-center' : ''
             }`}
           >
-            {session.antraege.filter((a) => a.status === 'approved').length}
-          </span>
-          {pendingCount > 0 && isStrategieLeader && (
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950 animate-pulse">
-              {pendingCount} neu
-            </span>
-          )}
-        </button>
+            {!isSidebarCollapsed && (
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden md:inline">
+                Navigation
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer hidden md:flex items-center justify-center"
+              title={isSidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+            >
+              {isSidebarCollapsed ? (
+                <ChevronRight className="w-4 h-4" />
+              ) : (
+                <ChevronLeft className="w-4 h-4" />
+              )}
+            </button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('strategy')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-            currentSubTab === 'strategy'
-              ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-              : 'text-slate-300 hover:bg-slate-800'
-          }`}
-        >
-          <Target className="w-4 h-4" />
-          <span>Strategie & Redner:innen</span>
-        </button>
+          {/* Navigation Items */}
+          <nav className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 scrollbar-none">
+            {/* 1. Anträge & Wortmeldungen */}
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('antraege')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                currentSubTab === 'antraege'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'text-slate-300 hover:bg-slate-800'
+              } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
+              title="Anträge & Wortmeldungen"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Gavel className="w-4 h-4 shrink-0" />
+                {!isSidebarCollapsed && <span>Anträge & Wortmeldungen</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      currentSubTab === 'antraege'
+                        ? 'bg-slate-950 text-sky-300'
+                        : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {hauptAntraege.length}
+                  </span>
+                  {pendingCount > 0 && isStrategieLeader && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-slate-950 animate-pulse">
+                      {pendingCount}
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('drive')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-            currentSubTab === 'drive'
-              ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-              : 'text-slate-300 hover:bg-slate-800'
-          }`}
-        >
-          <FolderOpen className="w-4 h-4" />
-          <span>Google Drive Unterlagen</span>
-        </button>
+            {/* 2. Vergangene Anträge */}
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('past_antraege')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                currentSubTab === 'past_antraege'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                  : 'text-slate-300 hover:bg-slate-800'
+              } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
+              title="Vergangene Anträge (bereits abgestimmt)"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <History className="w-4 h-4 shrink-0 text-emerald-400" />
+                {!isSidebarCollapsed && <span>Vergangene Anträge</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    currentSubTab === 'past_antraege'
+                      ? 'bg-slate-950 text-emerald-300'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {pastHauptAntraege.length}
+                </span>
+              )}
+            </button>
 
-        <button
-          type="button"
-          onClick={() => setCurrentSubTab('memes')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-            currentSubTab === 'memes'
-              ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md shadow-pink-500/20'
-              : 'text-slate-300 hover:bg-slate-800'
-          }`}
-        >
-          <Smile className="w-4 h-4 text-pink-400" />
-          <span>Meme-Feed 🎭</span>
-          <span
-            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-              currentSubTab === 'memes'
-                ? 'bg-white text-pink-900'
-                : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            {session.memes.length}
-          </span>
-        </button>
+            {/* 3. Strategie & Redner:innen */}
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('strategy')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                currentSubTab === 'strategy'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'text-slate-300 hover:bg-slate-800'
+              } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
+              title="Strategie & Redner:innen"
+            >
+              <Target className="w-4 h-4 shrink-0 text-purple-400" />
+              {!isSidebarCollapsed && <span>Strategie & Redner:innen</span>}
+            </button>
 
-        {/* Subtab 5: Archiv (nur Strategieführung / Admin) */}
-        {isStrategieLeader && (
-          <button
-            type="button"
-            onClick={() => setCurrentSubTab('archive')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-              currentSubTab === 'archive'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <Archive className="w-4 h-4 text-amber-400" />
-            <span>Archiv & Protokolle</span>
-          </button>
-        )}
-      </div>
+            {/* 4. Google Drive Unterlagen */}
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('drive')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                currentSubTab === 'drive'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'text-slate-300 hover:bg-slate-800'
+              } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
+              title="Google Drive Unterlagen"
+            >
+              <FolderOpen className="w-4 h-4 shrink-0 text-amber-400" />
+              {!isSidebarCollapsed && <span>Drive Unterlagen</span>}
+            </button>
+
+            {/* 5. Meme-Feed 🎭 */}
+            <button
+              type="button"
+              onClick={() => setCurrentSubTab('memes')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                currentSubTab === 'memes'
+                  ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md shadow-pink-500/20'
+                  : 'text-slate-300 hover:bg-slate-800'
+              } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
+              title="Meme-Feed 🎭"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Smile className="w-4 h-4 shrink-0 text-pink-400" />
+                {!isSidebarCollapsed && <span>Meme-Feed 🎭</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    currentSubTab === 'memes'
+                      ? 'bg-white text-pink-900'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {session.memes.length}
+                </span>
+              )}
+            </button>
+
+            {/* 6. Archiv & Protokolle (nur Strategieführung / Admin) */}
+            {isStrategieLeader && (
+              <button
+                type="button"
+                onClick={() => setCurrentSubTab('archive')}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                  currentSubTab === 'archive'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-300 hover:bg-slate-800'
+                } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
+                title="Archiv & Protokolle"
+              >
+                <Archive className="w-4 h-4 shrink-0 text-amber-400" />
+                {!isSidebarCollapsed && <span>Archiv & Logs</span>}
+              </button>
+            )}
+          </nav>
+        </aside>
+
+        {/* Right Main Content Pane */}
+        <main className="flex-1 min-w-0 w-full space-y-5">
 
       {/* Subtab 1: Anträge & Wortmeldungen */}
       {currentSubTab === 'antraege' && (
@@ -891,22 +1000,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         )}
                       </div>
                     </div>
-
-                    {/* Countdown Progress Bar */}
-                    {activeAntrag.plenumResult && (
-                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mt-1">
-                        <div
-                          className={`h-full transition-all duration-100 ease-linear ${
-                            activeAntrag.plenumResult === 'ANGENOMMEN'
-                              ? 'bg-emerald-400'
-                              : 'bg-rose-500'
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (decisionElapsedMs / DECISION_FADE_DURATION_MS) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    )}
                   </div>
 
                   {/* Nebenanträge zu diesem aktiven Hauptantrag */}
@@ -943,7 +1036,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           Eigens eingereichte Anträge erscheinen immer ganz oben
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         <button
                           type="button"
                           onClick={() => {
@@ -987,17 +1080,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         >
                           <span>🙋 WM</span>
                           <span className="text-[10px] text-slate-400">Wortmeldung</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewAntragPreset({ defaultType: 'ENDE_DEBATTE', parentAntrag: activeAntrag });
-                            setShowNewAntragModal(true);
-                          }}
-                          className="flex items-center justify-center gap-1.5 p-2.5 rounded-xl bg-slate-900 hover:bg-purple-500/20 border border-purple-500/40 text-purple-200 transition text-xs font-bold cursor-pointer col-span-2 sm:col-span-1"
-                        >
-                          <span>⚖️ GO</span>
-                          <span className="text-[10px] text-slate-400">Geschäftsordnung</span>
                         </button>
                       </div>
                     </div>
@@ -1293,22 +1375,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Countdown Progress Bar wenn entschieden */}
-                    {activeAntrag.plenumResult && (
-                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mb-4">
-                        <div
-                          className={`h-full transition-all duration-100 ease-linear ${
-                            activeAntrag.plenumResult === 'ANGENOMMEN'
-                              ? 'bg-emerald-400'
-                              : 'bg-rose-500'
-                          }`}
-                          style={{
-                            width: `${Math.min(100, (decisionElapsedMs / DECISION_FADE_DURATION_MS) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    )}
-
                     {/* Motion Title */}
                     <h2 className="text-xl sm:text-2xl font-black text-white mb-4 leading-tight">
                       {activeAntrag.title}
@@ -1436,7 +1502,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         Möchtest du eine Änderung, Streichung oder Wortmeldung zu {activeAntrag.title} einbringen? Dein eingereichter Antrag erscheint direkt ganz oben auf deiner Liste!
                       </p>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                         <button
                           type="button"
                           onClick={() => {
@@ -1483,18 +1549,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         >
                           <span className="text-sm font-black group-hover:scale-105 transition">🙋 WM</span>
                           <span className="text-[10px] text-slate-400 mt-0.5">Wortmeldung</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewAntragPreset({ defaultType: 'ENDE_DEBATTE', parentAntrag: activeAntrag });
-                            setShowNewAntragModal(true);
-                          }}
-                          className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-900 hover:bg-purple-500/20 border border-purple-500/40 text-purple-200 transition text-center cursor-pointer group shadow col-span-2 sm:col-span-1"
-                        >
-                          <span className="text-sm font-black group-hover:scale-105 transition">⚖️ GO</span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">Geschäftsordnung</span>
                         </button>
                       </div>
                     </div>
@@ -1595,7 +1649,194 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         </div>
       )}
 
-      {/* Subtab 2: Strategie & Taktik */}
+      {/* Subtab: Vergangene Anträge */}
+      {currentSubTab === 'past_antraege' && (
+        <div className="space-y-4 animate-in fade-in">
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                <History className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-black text-white">
+                  Vergangene Anträge des Plenums
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Bereits abgestimmte Hauptanträge inklusive aller dazugehörigen Nebenanträge
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+                <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+                <span>{pastHauptAntraege.filter((a) => a.plenumResult === 'ANGENOMMEN').length} Angenommen</span>
+              </span>
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold">
+                <X className="w-3.5 h-3.5 text-rose-400 stroke-[3]" />
+                <span>{pastHauptAntraege.filter((a) => a.plenumResult === 'ABGELEHNT').length} Abgelehnt</span>
+              </span>
+            </div>
+          </div>
+
+          {pastHauptAntraege.length === 0 ? (
+            <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8 sm:p-12 text-center text-slate-400">
+              <History className="w-10 h-10 mx-auto text-slate-600 mb-2" />
+              <h3 className="text-base font-bold text-slate-300 mb-1">
+                Noch keine vergangenen Anträge
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Sobald im Plenum ein Antrag als ANGENOMMEN oder ABGELEHNT markiert wird und ausfadet, erscheint er hier dauerhaft mit allen dazugehörigen Nebenanträgen.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pastHauptAntraege.map((hauptAntrag) => {
+                const subAntraege = session.antraege.filter(
+                  (a) => a.parentAntragId === hauptAntrag.id && a.type !== 'HAUPTANTRAG'
+                );
+
+                return (
+                  <div
+                    key={hauptAntrag.id}
+                    className={`rounded-3xl border-2 p-5 sm:p-6 shadow-xl space-y-4 transition-all ${
+                      hauptAntrag.plenumResult === 'ANGENOMMEN'
+                        ? 'bg-slate-900/90 border-emerald-500/40 shadow-emerald-500/5'
+                        : 'bg-slate-900/90 border-rose-500/40 shadow-rose-500/5'
+                    }`}
+                  >
+                    {/* Header des vergangenen Hauptantrags */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border ${
+                            hauptAntrag.plenumResult === 'ANGENOMMEN'
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          }`}
+                        >
+                          {hauptAntrag.plenumResult === 'ANGENOMMEN' ? (
+                            <>
+                              <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+                              <span>ANGENOMMEN</span>
+                            </>
+                          ) : (
+                            <>
+                              <X className="w-4 h-4 text-rose-400 stroke-[3]" />
+                              <span>ABGELEHNT</span>
+                            </>
+                          )}
+                        </span>
+
+                        <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                          {ANTRAG_TYPE_CONFIG[hauptAntrag.type]?.shortLabel}
+                        </span>
+
+                        {hauptAntrag.lineOrParagraph && (
+                          <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                            📍 {hauptAntrag.lineOrParagraph}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <span>Antragsteller:in: <strong className="text-white">{hauptAntrag.author}</strong></span>
+                        {hauptAntrag.plenumResultAt && (
+                          <span className="text-[11px] text-slate-500">
+                            • {new Date(hauptAntrag.plenumResultAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Uhr
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Titel & Forderungen */}
+                    <div>
+                      <h3 className="text-lg sm:text-xl font-bold text-white mb-2 leading-snug">
+                        {hauptAntrag.title}
+                      </h3>
+                      {hauptAntrag.forderungspunkte && hauptAntrag.forderungspunkte.length > 0 && (
+                        <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 mt-2">
+                          <span className="text-xs font-bold text-sky-400 block mb-2">
+                            Daher fordert das Vorarlberger Schüler:innenparlament ({hauptAntrag.forderungspunkte.length}):
+                          </span>
+                          <ul className="space-y-1.5 text-xs sm:text-sm text-slate-300">
+                            {hauptAntrag.forderungspunkte.map((fp, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-sky-400 font-bold shrink-0">•</span>
+                                <span>{fp}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dazugehörige Nebenanträge */}
+                    <div className="pt-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-purple-300 uppercase tracking-wider mb-2.5">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Dazugehörige Nebenanträge ({subAntraege.length})</span>
+                      </div>
+
+                      {subAntraege.length === 0 ? (
+                        <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 text-xs text-slate-500 italic">
+                          Zu diesem Hauptantrag wurden keine Nebenanträge eingebracht.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {subAntraege.map((sub) => (
+                            <div
+                              key={sub.id}
+                              className="p-3 sm:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="space-y-1 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                      ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor || 'bg-slate-800'
+                                    }`}
+                                  >
+                                    {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel}
+                                  </span>
+                                  {sub.lineOrParagraph && (
+                                    <span className="text-slate-400 font-mono text-[11px]">
+                                      📍 {sub.lineOrParagraph}
+                                    </span>
+                                  )}
+                                  <span className="font-semibold text-slate-200">
+                                    {sub.title}
+                                  </span>
+                                </div>
+                                <p className="text-slate-400 text-xs line-clamp-2">
+                                  {sub.content}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                                {sub.claimedBy ? (
+                                  <span className="px-2.5 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold">
+                                    🎙️ {sub.claimedBy}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 text-[11px] italic">
+                                    Nicht geclaimed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Subtab 3: Strategie & Taktik */}
       {currentSubTab === 'strategy' && (
         <StrategyNotesTab
           strategyNotes={session.strategyNotes}
@@ -1639,6 +1880,8 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           }}
         />
       )}
+        </main>
+      </div>
 
       {/* Footer */}
       <footer className="pt-6 pb-2 text-center text-xs text-slate-500 border-t border-slate-900/60 flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3">

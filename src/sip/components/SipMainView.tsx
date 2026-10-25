@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  Search,
 } from 'lucide-react';
 import { AppSettings, MemberAccount } from '../../types';
 import {
@@ -54,6 +55,234 @@ import { MemeFeedTab } from './MemeFeedTab';
 import { StrategyNotesTab } from './StrategyNotesTab';
 import { SipArchiveView } from './SipArchiveView';
 import { downloadSipProtocol } from '../utils/protocolExporter';
+
+interface PastAntragCardProps {
+  hauptAntrag: SipAntrag;
+  subAntraege: SipAntrag[];
+}
+
+export const PastAntragCard: React.FC<PastAntragCardProps> = ({
+  hauptAntrag,
+  subAntraege,
+}) => {
+  const [showForderungen, setShowForderungen] = useState(false);
+  const [showText, setShowText] = useState(false);
+  const [showSubAntraege, setShowSubAntraege] = useState(false);
+  const [hasCopiedRede, setHasCopiedRede] = useState(false);
+
+  return (
+    <div
+      className={`rounded-3xl border-2 p-4 sm:p-5 shadow-xl space-y-3 transition-all ${
+        hauptAntrag.plenumResult === 'ANGENOMMEN'
+          ? 'bg-slate-900/90 border-emerald-500/40 shadow-emerald-500/5'
+          : 'bg-slate-900/90 border-rose-500/40 shadow-rose-500/5'
+      }`}
+    >
+      {/* 1. Header & Antragsnummer / Titel (Immer sichtbar) */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2 border-b border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border ${
+                hauptAntrag.plenumResult === 'ANGENOMMEN'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+              }`}
+            >
+              {hauptAntrag.plenumResult === 'ANGENOMMEN' ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+                  <span>ANGENOMMEN</span>
+                </>
+              ) : (
+                <>
+                  <X className="w-4 h-4 text-rose-400 stroke-[3]" />
+                  <span>ABGELEHNT</span>
+                </>
+              )}
+            </span>
+
+            <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+              {ANTRAG_TYPE_CONFIG[hauptAntrag.type]?.shortLabel}
+            </span>
+
+            {hauptAntrag.lineOrParagraph && (
+              <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
+                📍 {hauptAntrag.lineOrParagraph}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Antragsteller:in: <strong className="text-white">{hauptAntrag.author}</strong></span>
+            {hauptAntrag.plenumResultAt && (
+              <span className="text-[11px] text-slate-500">
+                • {new Date(hauptAntrag.plenumResultAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Uhr
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Antragstitel */}
+        <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+          {hauptAntrag.title}
+        </h3>
+      </div>
+
+      {/* 2. Separate Blöcke (standardmäßig alle eingeklappt) */}
+      <div className="space-y-2 pt-1">
+        {/* Block A: Forderungspunkte */}
+        {hauptAntrag.forderungspunkte && hauptAntrag.forderungspunkte.length > 0 && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowForderungen(!showForderungen)}
+              className="w-full flex items-center justify-between p-3 text-left text-xs font-bold text-sky-300 hover:bg-slate-900/60 transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-sky-400" />
+                <span>Daher fordert das Vorarlberger Schüler:innenparlament ({hauptAntrag.forderungspunkte.length})</span>
+              </div>
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="text-[11px] font-normal">{showForderungen ? 'Einklappen' : 'Aufklappen'}</span>
+                {showForderungen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </button>
+
+            {showForderungen && (
+              <div className="p-3.5 pt-0 border-t border-slate-800/80 mt-1 animate-in fade-in">
+                <ul className="space-y-2 text-xs sm:text-sm text-slate-200 mt-2">
+                  {hauptAntrag.forderungspunkte.map((fp, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5">
+                      <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/30">
+                        {idx + 1}
+                      </span>
+                      <span className="leading-relaxed font-medium">{fp}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Block B: Antragstext / Vorbereitete Rede */}
+        {(hauptAntrag.rede || hauptAntrag.content) && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowText(!showText)}
+              className="w-full flex items-center justify-between p-3 text-left text-xs font-bold text-indigo-300 hover:bg-slate-900/60 transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Mic className="w-4 h-4 text-indigo-400" />
+                <span>{hauptAntrag.rede ? `Vorbereitete Rede (${hauptAntrag.author})` : 'Antragstext'}</span>
+              </div>
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="text-[11px] font-normal">{showText ? 'Einklappen' : 'Aufklappen'}</span>
+                {showText ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
+            </button>
+
+            {showText && (
+              <div className="p-3.5 pt-0 border-t border-slate-800/80 mt-1 animate-in fade-in space-y-2">
+                <div className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed mt-2">
+                  {hauptAntrag.rede || hauptAntrag.content}
+                </div>
+                {hauptAntrag.rede && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(hauptAntrag.rede || '');
+                      setHasCopiedRede(true);
+                      setTimeout(() => setHasCopiedRede(false), 2000);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                  >
+                    {hasCopiedRede ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{hasCopiedRede ? 'Kopiert!' : 'Rede kopieren'}</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Block C: Dazugehörige Nebenanträge */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowSubAntraege(!showSubAntraege)}
+            className="w-full flex items-center justify-between p-3 text-left text-xs font-bold text-purple-300 hover:bg-slate-900/60 transition cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span>Dazugehörige Nebenanträge ({subAntraege.length})</span>
+            </div>
+            <div className="flex items-center gap-1 text-slate-400">
+              <span className="text-[11px] font-normal">{showSubAntraege ? 'Einklappen' : 'Aufklappen'}</span>
+              {showSubAntraege ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
+          </button>
+
+          {showSubAntraege && (
+            <div className="p-3.5 pt-0 border-t border-slate-800/80 mt-1 animate-in fade-in">
+              {subAntraege.length === 0 ? (
+                <p className="text-xs text-slate-500 italic mt-2">
+                  Zu diesem Hauptantrag wurden keine Nebenanträge eingereicht.
+                </p>
+              ) : (
+                <div className="space-y-2 mt-2">
+                  {subAntraege.map((sub) => (
+                    <div
+                      key={sub.id}
+                      className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor || 'bg-slate-800'
+                            }`}
+                          >
+                            {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel}
+                          </span>
+                          {sub.lineOrParagraph && (
+                            <span className="text-slate-400 font-mono text-[11px]">
+                              📍 {sub.lineOrParagraph}
+                            </span>
+                          )}
+                          <span className="font-semibold text-slate-200">
+                            {sub.title}
+                          </span>
+                        </div>
+                        <p className="text-slate-400 text-xs line-clamp-2">
+                          {sub.content}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                        {sub.claimedBy ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold">
+                            🎙️ {sub.claimedBy}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-[11px] italic">
+                            Nicht geclaimed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface SipMainViewProps {
   settings: AppSettings;
@@ -687,6 +916,30 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         </div>
       </div>
 
+      {/* Suchleiste direkt unter dem Header (Strategieführungsansicht) */}
+      {isStrategieLeader && (
+        <div className="relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Anträge durchsuchen (nach Zeile, Titel, Stichwort, Redner:in, Antragsteller:in)..."
+            className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-sky-500 shadow-lg backdrop-blur"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+              title="Suche zurücksetzen"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Prominent Vote Recommendation Banner (Always visible in Plenum) */}
       <VoteRecommendationBanner
         recommendation={session.voteRecommendation}
@@ -696,9 +949,9 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
       {/* Main Content Area with Collapsible Left Sidebar */}
       <div className="flex flex-col md:flex-row items-start gap-5">
-        {/* Collapsible Left Sidebar */}
+        {/* Collapsible Left Sidebar (Sticky am linken Rand fixiert) */}
         <aside
-          className={`transition-all duration-300 shrink-0 bg-slate-900/90 border border-slate-800 rounded-3xl p-3 sm:p-3.5 shadow-xl backdrop-blur ${
+          className={`transition-all duration-300 shrink-0 bg-slate-900/90 border border-slate-800 rounded-3xl p-3 sm:p-3.5 shadow-xl backdrop-blur md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-2rem)] md:overflow-y-auto z-20 ${
             isSidebarCollapsed ? 'w-full md:w-16' : 'w-full md:w-60'
           }`}
         >
@@ -1144,18 +1397,13 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
               {/* Filter Bar */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 sm:p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  {/* Search */}
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Suche nach Zeile, Stichwort, Redner:in oder Titel..."
-                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-sky-500"
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-400">
+                    Filter & Status:
+                  </span>
 
                   {/* Claim Filter Buttons */}
-                  <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => setClaimFilter('ALL')}
@@ -1697,138 +1945,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                 );
 
                 return (
-                  <div
+                  <PastAntragCard
                     key={hauptAntrag.id}
-                    className={`rounded-3xl border-2 p-5 sm:p-6 shadow-xl space-y-4 transition-all ${
-                      hauptAntrag.plenumResult === 'ANGENOMMEN'
-                        ? 'bg-slate-900/90 border-emerald-500/40 shadow-emerald-500/5'
-                        : 'bg-slate-900/90 border-rose-500/40 shadow-rose-500/5'
-                    }`}
-                  >
-                    {/* Header des vergangenen Hauptantrags */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border ${
-                            hauptAntrag.plenumResult === 'ANGENOMMEN'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                          }`}
-                        >
-                          {hauptAntrag.plenumResult === 'ANGENOMMEN' ? (
-                            <>
-                              <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
-                              <span>ANGENOMMEN</span>
-                            </>
-                          ) : (
-                            <>
-                              <X className="w-4 h-4 text-rose-400 stroke-[3]" />
-                              <span>ABGELEHNT</span>
-                            </>
-                          )}
-                        </span>
-
-                        <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
-                          {ANTRAG_TYPE_CONFIG[hauptAntrag.type]?.shortLabel}
-                        </span>
-
-                        {hauptAntrag.lineOrParagraph && (
-                          <span className="text-xs font-mono px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300">
-                            📍 {hauptAntrag.lineOrParagraph}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <span>Antragsteller:in: <strong className="text-white">{hauptAntrag.author}</strong></span>
-                        {hauptAntrag.plenumResultAt && (
-                          <span className="text-[11px] text-slate-500">
-                            • {new Date(hauptAntrag.plenumResultAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} Uhr
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Titel & Forderungen */}
-                    <div>
-                      <h3 className="text-lg sm:text-xl font-bold text-white mb-2 leading-snug">
-                        {hauptAntrag.title}
-                      </h3>
-                      {hauptAntrag.forderungspunkte && hauptAntrag.forderungspunkte.length > 0 && (
-                        <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 mt-2">
-                          <span className="text-xs font-bold text-sky-400 block mb-2">
-                            Daher fordert das Vorarlberger Schüler:innenparlament ({hauptAntrag.forderungspunkte.length}):
-                          </span>
-                          <ul className="space-y-1.5 text-xs sm:text-sm text-slate-300">
-                            {hauptAntrag.forderungspunkte.map((fp, idx) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-sky-400 font-bold shrink-0">•</span>
-                                <span>{fp}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Dazugehörige Nebenanträge */}
-                    <div className="pt-2">
-                      <div className="flex items-center gap-2 text-xs font-bold text-purple-300 uppercase tracking-wider mb-2.5">
-                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                        <span>Dazugehörige Nebenanträge ({subAntraege.length})</span>
-                      </div>
-
-                      {subAntraege.length === 0 ? (
-                        <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/80 text-xs text-slate-500 italic">
-                          Zu diesem Hauptantrag wurden keine Nebenanträge eingebracht.
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {subAntraege.map((sub) => (
-                            <div
-                              key={sub.id}
-                              className="p-3 sm:p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                            >
-                              <div className="space-y-1 min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                      ANTRAG_TYPE_CONFIG[sub.type]?.badgeColor || 'bg-slate-800'
-                                    }`}
-                                  >
-                                    {ANTRAG_TYPE_CONFIG[sub.type]?.shortLabel}
-                                  </span>
-                                  {sub.lineOrParagraph && (
-                                    <span className="text-slate-400 font-mono text-[11px]">
-                                      📍 {sub.lineOrParagraph}
-                                    </span>
-                                  )}
-                                  <span className="font-semibold text-slate-200">
-                                    {sub.title}
-                                  </span>
-                                </div>
-                                <p className="text-slate-400 text-xs line-clamp-2">
-                                  {sub.content}
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
-                                {sub.claimedBy ? (
-                                  <span className="px-2.5 py-1 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold">
-                                    🎙️ {sub.claimedBy}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-500 text-[11px] italic">
-                                    Nicht geclaimed
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    hauptAntrag={hauptAntrag}
+                    subAntraege={subAntraege}
+                  />
                 );
               })}
             </div>
@@ -1864,8 +1985,10 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         <MemeFeedTab
           memes={session.memes}
           currentUserName={currentUserName}
+          isStrategieLeader={isStrategieLeader}
           onAddMeme={handleAddMeme}
           onReactMeme={handleReactMeme}
+          onDeleteMeme={(memeId) => sipRealtime.deleteMeme(memeId, settings)}
         />
       )}
 
@@ -1875,8 +1998,11 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           currentSession={session}
           settings={settings}
           currentUserName={currentUserName}
-          onStartNewSession={async (newTitle) => {
-            await sipRealtime.startNewSession(newTitle, settings);
+          onArchiveAndClearSession={async () => {
+            await sipRealtime.archiveAndClearCurrentSession(settings);
+          }}
+          onStartNewSession={async (options) => {
+            await sipRealtime.startNewSession(options, settings);
           }}
         />
       )}

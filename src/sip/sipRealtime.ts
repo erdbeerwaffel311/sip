@@ -101,6 +101,30 @@ class SipRealtimeService {
       activeId = activeId.replace('antrag_top_', 'antrag_');
     }
 
+    // Wenn es sich um eine archivierte oder neu gestartete Sitzung handelt (nicht die Ur-Vorlage sip_current_session):
+    // Keine alten Vorlage-Anträge oder alten Memes hineinmischen, sondern exakt die Session-Daten verwenden!
+    const isOriginalTemplate = session.id === 'sip_current_session';
+    if (!isOriginalTemplate && session.id) {
+      return {
+        id: session.id,
+        title: session.title || 'Schüler:innenparlament (SiP)',
+        strategyNotes: session.strategyNotes ?? '',
+        driveFolderUrl: session.driveFolderUrl ?? '',
+        activeAntragId: activeId,
+        voteRecommendation: session.voteRecommendation || {
+          type: 'KEINE',
+          note: '',
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'Strategieführung',
+          isPublished: false,
+        },
+        antraege: session.antraege || [],
+        memes: session.memes || [],
+        activityLog: session.activityLog || [],
+        updatedAt: session.updatedAt || new Date().toISOString(),
+      };
+    }
+
     const customAntraege = (session.antraege || [])
       .filter((a) => !a.isPreFab)
       .map((a) => (a.id.includes('antrag_top_') ? { ...a, id: a.id.replace('antrag_top_', 'antrag_') } : a));
@@ -1008,25 +1032,35 @@ class SipRealtimeService {
   }
 
   /**
-   * Archiviert die aktuelle Sitzung und startet ein neues SiP
+   * Archiviert die aktuelle Sitzung und leert alle Kategorien (Anträge, Notizen, Memes, Drive)
    */
-  public async startNewSession(newTitle: string, settings?: AppSettings): Promise<void> {
+  public async archiveAndClearCurrentSession(settings?: AppSettings): Promise<void> {
     this.lastLocalMutationAt = Date.now();
     const oldSession = { ...this.currentSession };
     await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
 
     this.currentSession = {
-      ...DEFAULT_SIP_SESSION,
       id: `session_${Date.now()}`,
-      title: newTitle.trim() || DEFAULT_SIP_SESSION.title,
+      title: `${oldSession.title} (Archiviert)`,
+      driveFolderUrl: '',
+      strategyNotes: '',
       activeAntragId: null,
+      voteRecommendation: {
+        type: 'KEINE',
+        note: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Strategieführung',
+        isPublished: false,
+      },
+      antraege: [],
+      memes: [],
       activityLog: [
         {
           id: `act_${Date.now()}`,
           timestamp: new Date().toISOString(),
           performedBy: 'Strategieführung',
           action: 'SESSION_ARCHIVED',
-          details: `Neue Sitzung "${newTitle.trim() || DEFAULT_SIP_SESSION.title}" gestartet. Vorherige Sitzung "${oldSession.title}" wurde im Archiv gesichert.`,
+          details: `Sitzung "${oldSession.title}" wurde archiviert. Alle Kategorien wurden für das Plenum geleert.`,
         },
       ],
       updatedAt: new Date().toISOString(),
@@ -1036,6 +1070,76 @@ class SipRealtimeService {
 
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
     this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+  }
+
+  /**
+   * Startet ein neues SiP mit gewähltem Namen und Google Drive Ordner.
+   * Archiviert das vorherige SiP automatisch, falls es noch nicht archiviert wurde.
+   */
+  public async startNewSession(
+    options: { title: string; driveFolderUrl?: string; skipArchive?: boolean },
+    settings?: AppSettings
+  ): Promise<void> {
+    this.lastLocalMutationAt = Date.now();
+    const oldSession = { ...this.currentSession };
+
+    // Wenn das vorherige SiP noch nicht archiviert wurde und Inhalte hatte: Jetzt archivieren
+    if (!options.skipArchive && (oldSession.antraege.length > 0 || (oldSession.activityLog || []).length > 1)) {
+      await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
+    }
+
+    this.currentSession = {
+      id: `session_${Date.now()}`,
+      title: options.title.trim() || 'Neues Schüler:innenparlament (SiP)',
+      driveFolderUrl: (options.driveFolderUrl || '').trim(),
+      strategyNotes: '',
+      activeAntragId: null,
+      voteRecommendation: {
+        type: 'KEINE',
+        note: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Strategieführung',
+        isPublished: false,
+      },
+      antraege: [],
+      memes: [],
+      activityLog: [
+        {
+          id: `act_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          performedBy: 'Strategieführung',
+          action: 'SESSION_ARCHIVED',
+          details: `Neues SiP "${options.title.trim()}" gestartet. Drive-Ordner: ${options.driveFolderUrl?.trim() || 'noch keiner hinterlegt'}.`,
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveToStorage();
+    this.notify();
+
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
+    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+  }
+
+  /**
+   * Löscht ein Meme aus dem Meme-Feed (durch Strategieführung)
+   */
+  public deleteMeme(memeId: string, settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
+    this.currentSession = {
+      ...this.currentSession,
+      memes: this.currentSession.memes.filter((m) => m.id !== memeId),
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveToStorage();
+    this.notify();
+
+    const msg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(msg, settings);
+    this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession).catch(() => {});
   }
 
   /**

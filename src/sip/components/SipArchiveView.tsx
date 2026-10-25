@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Archive,
   Calendar,
@@ -12,6 +12,8 @@ import {
   X,
   AlertTriangle,
   Play,
+  FolderOpen,
+  Sparkles,
 } from 'lucide-react';
 import { SipArchivedSession, SipSession, ANTRAG_TYPE_CONFIG } from '../types';
 import { AppSettings } from '../../types';
@@ -22,17 +24,52 @@ import {
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
 
+/**
+ * Berechnet intelligent den Folgetitel für ein Schüler:innenparlament:
+ * Standardmäßig 2 SiPs pro Schuljahr. Nach dem 2. SiP 24/25 folgt das 1. SiP 25/26.
+ */
+export function getNextSipTitle(currentTitle: string): string {
+  const match = currentTitle.match(/(\d+)\.\s*(?:Schüler:innenparlament\s*\(SiP\)|SiP)?\s*.*?(\d{2,4})\s*[/–-]\s*(\d{2,4})/i);
+
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const startYearStr = match[2];
+    const endYearStr = match[3];
+
+    let startYear = parseInt(startYearStr, 10);
+    let endYear = parseInt(endYearStr, 10);
+    if (startYear < 100) startYear += 2000;
+    if (endYear < 100) endYear += 2000;
+
+    if (num === 1) {
+      const displayStart = startYearStr.length === 2 ? (startYear % 100).toString().padStart(2, '0') : startYear.toString();
+      const displayEnd = endYearStr.length === 2 ? (endYear % 100).toString().padStart(2, '0') : endYear.toString();
+      return `2. Schüler:innenparlament (SiP) ${displayStart}/${displayEnd}`;
+    } else {
+      const nextStartYear = startYear + 1;
+      const nextEndYear = endYear + 1;
+      const displayStart = startYearStr.length === 2 ? (nextStartYear % 100).toString().padStart(2, '0') : nextStartYear.toString();
+      const displayEnd = endYearStr.length === 2 ? (nextEndYear % 100).toString().padStart(2, '0') : nextEndYear.toString();
+      return `1. Schüler:innenparlament (SiP) ${displayStart}/${displayEnd}`;
+    }
+  }
+
+  return `1. Schüler:innenparlament (SiP) 2025/26`;
+}
+
 interface SipArchiveViewProps {
   currentSession: SipSession;
   settings: AppSettings;
   currentUserName: string;
-  onStartNewSession: (newTitle: string) => Promise<void>;
+  onArchiveAndClearSession?: () => Promise<void>;
+  onStartNewSession: (options: { title: string; driveFolderUrl: string; skipArchive?: boolean }) => Promise<void>;
 }
 
 export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   currentSession,
   settings,
   currentUserName,
+  onArchiveAndClearSession,
   onStartNewSession,
 }) => {
   const [archives, setArchives] = useState<SipArchivedSession[]>([]);
@@ -40,11 +77,21 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [inspectingArchive, setInspectingArchive] = useState<SipArchivedSession | null>(null);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
+  const [newDriveFolderUrl, setNewDriveFolderUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     loadArchives();
   }, [settings]);
+
+  // Prüft, ob das aktuelle SiP bereits archiviert wurde
+  const isCurrentSessionAlreadyArchived = useMemo(() => {
+    return archives.some(
+      (a) =>
+        a.sessionTitle === currentSession.title &&
+        (currentSession.antraege.length === 0 || a.antraegeCount === currentSession.antraege.length)
+    );
+  }, [archives, currentSession.title, currentSession.antraege.length]);
 
   async function loadArchives() {
     setLoading(true);
@@ -57,14 +104,22 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   }
 
   async function handleArchiveNow() {
-    if (!window.confirm(`Möchtest du die aktuelle Sitzung "${currentSession.title}" jetzt ins Archiv übertragen?`)) {
+    if (
+      !window.confirm(
+        `Möchtest du das aktuelle SiP "${currentSession.title}" jetzt ins Archiv übertragen?\n\nAlle Kategorien (Anträge & Wortmeldungen, Vergangene Anträge, Strategie, Drive Unterlagen, Meme-Feed) werden dadurch für das Plenum geleert und sind danach nur noch hier im Archiv einsehbar.`
+      )
+    ) {
       return;
     }
     setIsSubmitting(true);
     try {
-      const updated = await archiveCurrentSession(currentSession, currentUserName, settings);
-      setArchives(updated);
-      alert('Sitzung erfolgreich im Archiv gesichert!');
+      if (onArchiveAndClearSession) {
+        await onArchiveAndClearSession();
+      } else {
+        await archiveCurrentSession(currentSession, currentUserName, settings);
+      }
+      await loadArchives();
+      alert('Sitzung erfolgreich im Archiv gesichert und alle Kategorien für die Vorbereitung geleert!');
     } finally {
       setIsSubmitting(false);
     }
@@ -83,15 +138,29 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
 
   async function handleConfirmNewSession(e: React.FormEvent) {
     e.preventDefault();
-    if (!newSessionTitle.trim()) return;
+    if (!newSessionTitle.trim()) {
+      alert('Bitte gib einen Namen für das neue SiP ein.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await onStartNewSession(newSessionTitle.trim());
+      await onStartNewSession({
+        title: newSessionTitle.trim(),
+        driveFolderUrl: newDriveFolderUrl.trim(),
+        skipArchive: isCurrentSessionAlreadyArchived,
+      });
       setShowNewSessionModal(false);
       setNewSessionTitle('');
+      setNewDriveFolderUrl('');
       await loadArchives();
-      alert(`Neue Sitzung "${newSessionTitle.trim()}" gestartet! Die vorherige Sitzung wurde im Archiv gesichert.`);
+      alert(
+        `Neues SiP "${newSessionTitle.trim()}" gestartet!\n${
+          isCurrentSessionAlreadyArchived
+            ? 'Das vorherige SiP war bereits archiviert.'
+            : 'Das vorherige SiP wurde automatisch im Archiv gesichert.'
+        }\nAlle Kategorien wurden geleert. Du kannst nun die Hauptanträge aus dem Google Drive Ordner importieren.`
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -135,7 +204,8 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                setNewSessionTitle(`3. Schüler:innenparlament (SiP) 2024/25`);
+                setNewSessionTitle(getNextSipTitle(currentSession.title));
+                setNewDriveFolderUrl('');
                 setShowNewSessionModal(true);
               }}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition cursor-pointer"
@@ -253,47 +323,95 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                 <div>
                   <h3 className="font-black text-lg text-white">Neues SiP starten</h3>
                   <span className="text-xs text-amber-300 font-semibold">
-                    Aktuelle Sitzung wird automatisch archiviert
+                    {isCurrentSessionAlreadyArchived
+                      ? 'Vorheriges SiP ist bereits archiviert'
+                      : 'Vorheriges SiP wird automatisch archiviert'}
                   </span>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowNewSessionModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleConfirmNewSession} className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  Die derzeitige Sitzung <strong>„{currentSession.title}“</strong> wird mit allen Claims, eingereichten Anträgen und Protokolleinträgen im Archiv gesichert.
-                  Anschließend wird die neue Sitzung für das Plenum freigeschaltet.
-                </span>
-              </div>
+              {isCurrentSessionAlreadyArchived ? (
+                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>
+                    Das bisherige SiP <strong>„{currentSession.title}“</strong> wurde bereits gesichert. Es ist keine neuerliche Archivierung erforderlich.
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    Das derzeitige SiP <strong>„{currentSession.title}“</strong> wird mit allen Claims, eingereichten Anträgen und Protokolleinträgen automatisch im Archiv gesichert.
+                  </span>
+                </div>
+              )}
 
+              {/* Titel des neuen SiP */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Titel des neuen Schüler:innenparlaments:
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Name des neuen SiP:
+                  </label>
+                  <span className="text-[11px] text-amber-400/90 font-medium">
+                    (Standard: 2 SiPs pro Schuljahr)
+                  </span>
+                </div>
                 <input
                   type="text"
                   required
                   value={newSessionTitle}
                   onChange={(e) => setNewSessionTitle(e.target.value)}
-                  placeholder="z.B. 3. Schüler:innenparlament (SiP) 2024/25"
+                  placeholder="z.B. 1. Schüler:innenparlament (SiP) 2025/26"
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500"
                 />
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-[11px] text-slate-400">Vorschlag:</span>
+                  <button
+                    type="button"
+                    onClick={() => setNewSessionTitle(getNextSipTitle(currentSession.title))}
+                    className="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-bold transition cursor-pointer border border-slate-700"
+                  >
+                    {getNextSipTitle(currentSession.title)}
+                  </button>
+                </div>
+              </div>
+
+              {/* Neuer Google Drive Ordner */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Neuer Google Drive Ordner (Link):
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <FolderOpen className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="url"
+                    value={newDriveFolderUrl}
+                    onChange={(e) => setNewDriveFolderUrl(e.target.value)}
+                    placeholder="https://drive.google.com/drive/folders/..."
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  Aus diesem Ordner können anschließend im Google Drive Tab die neuen Hauptanträge für das SiP importiert werden.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowNewSessionModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white cursor-pointer"
                 >
                   Abbrechen
                 </button>
@@ -302,7 +420,11 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                   disabled={isSubmitting}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 transition cursor-pointer"
                 >
-                  {isSubmitting ? 'Wird initialisiert...' : 'Altes SiP archivieren & Neues starten'}
+                  {isSubmitting
+                    ? 'Wird initialisiert...'
+                    : isCurrentSessionAlreadyArchived
+                    ? 'Neues SiP initialisieren'
+                    : 'Altes SiP archivieren & Neues starten'}
                 </button>
               </div>
             </form>

@@ -9,14 +9,17 @@ import {
   MessageSquare,
   Sparkles,
   Link2,
+  Trash2,
 } from 'lucide-react';
 import { SipMeme } from '../types';
 
 interface MemeFeedTabProps {
   memes: SipMeme[];
   currentUserName: string;
+  isStrategieLeader?: boolean;
   onAddMeme: (meme: { author: string; imageUrl: string; caption: string }) => void;
   onReactMeme: (memeId: string, emoji: string) => void;
+  onDeleteMeme?: (memeId: string) => void;
 }
 
 const POPULAR_EMOJIS = ['😂', '🔥', '💀', '👏', '💯', '🤝', '👀'];
@@ -24,8 +27,10 @@ const POPULAR_EMOJIS = ['😂', '🔥', '💀', '👏', '💯', '🤝', '👀'];
 export const MemeFeedTab: React.FC<MemeFeedTabProps> = ({
   memes,
   currentUserName,
+  isStrategieLeader,
   onAddMeme,
   onReactMeme,
+  onDeleteMeme,
 }) => {
   const [caption, setCaption] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -230,6 +235,21 @@ export const MemeFeedTab: React.FC<MemeFeedTabProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {isStrategieLeader && onDeleteMeme && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Möchtest du dieses Meme wirklich aus dem Feed löschen?')) {
+                        onDeleteMeme(meme.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700/60 hover:border-rose-500/40 transition cursor-pointer"
+                    title="Meme aus dem Feed löschen (Strategieführung)"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               {/* Meme Image */}

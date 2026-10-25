@@ -39,6 +39,8 @@ export interface SipAntrag {
   createdAt: string;
   approvedAt?: string;
   adminNotes?: string;
+  plenumResult?: 'ANGENOMMEN' | 'ABGELEHNT' | null;
+  plenumResultAt?: string | null;
 }
 
 export interface SipMemeReaction {
@@ -67,6 +69,7 @@ export interface SipActivityLogEntry {
     | 'ANTRAG_SUBMITTED'
     | 'ANTRAG_APPROVED'
     | 'ANTRAG_REJECTED'
+    | 'ANTRAG_DECIDED'
     | 'ANTRAG_EDITED'
     | 'ANTRAG_DELETED'
     | 'VOTE_REC_SET'

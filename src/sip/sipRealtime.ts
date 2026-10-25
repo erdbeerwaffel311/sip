@@ -26,6 +26,7 @@ export type SipRealtimeMessage =
   | { type: 'ANTRAG_UNCLAIMED'; antragId: string; antragTitle: string; unclaimedBy: string }
   | { type: 'ANTRAG_SUBMITTED'; antrag: SipAntrag }
   | { type: 'ANTRAG_APPROVED'; antrag: SipAntrag }
+  | { type: 'ANTRAG_DECIDED'; antragId: string; decision: 'ANGENOMMEN' | 'ABGELEHNT'; decidedAt: string }
   | { type: 'MEME_ADDED'; meme: SipMeme };
 
 class SipRealtimeService {
@@ -63,7 +64,7 @@ class SipRealtimeService {
 
   private toCompactSession(session: SipSession): SipSession {
     const compactAntraege = (session.antraege || [])
-      .filter((a) => !a.isPreFab || a.claimedBy || a.isActive || a.id === session.activeAntragId || a.isEditedByAdmin)
+      .filter((a) => !a.isPreFab || a.claimedBy || a.isActive || a.id === session.activeAntragId || a.isEditedByAdmin || a.plenumResult)
       .map((a) => {
         if (a.isPreFab && !a.isEditedByAdmin) {
           return {
@@ -78,6 +79,8 @@ class SipRealtimeService {
             claimedAt: a.claimedAt || null,
             isActive: a.isActive ?? false,
             createdAt: a.createdAt,
+            plenumResult: a.plenumResult || null,
+            plenumResultAt: a.plenumResultAt || null,
             content: '',
           } as SipAntrag;
         }
@@ -104,15 +107,23 @@ class SipRealtimeService {
 
     const existingClaims = new Map<
       string,
-      { claimedBy: string | null; claimedAt: string | null; isActive?: boolean }
+      {
+        claimedBy: string | null;
+        claimedAt: string | null;
+        isActive?: boolean;
+        plenumResult?: 'ANGENOMMEN' | 'ABGELEHNT' | null;
+        plenumResultAt?: string | null;
+      }
     >();
     (session.antraege || []).forEach((a) => {
       const cleanId = a.id.replace('antrag_top_', 'antrag_');
-      if (a.claimedBy || a.isActive) {
+      if (a.claimedBy || a.isActive || a.plenumResult) {
         existingClaims.set(cleanId, {
           claimedBy: a.claimedBy || null,
           claimedAt: a.claimedAt || null,
           isActive: a.isActive,
+          plenumResult: a.plenumResult || null,
+          plenumResultAt: a.plenumResultAt || null,
         });
       }
     });
@@ -125,6 +136,8 @@ class SipRealtimeService {
         claimedBy: claim ? claim.claimedBy : fresh.claimedBy,
         claimedAt: claim ? claim.claimedAt : fresh.claimedAt,
         isActive: isCurrentlyActive,
+        plenumResult: claim?.plenumResult ?? fresh.plenumResult ?? null,
+        plenumResultAt: claim?.plenumResultAt ?? fresh.plenumResultAt ?? null,
       };
     });
 
@@ -222,6 +235,25 @@ class SipRealtimeService {
             });
           }
         });
+    }
+
+    // 4. Plenum Decision diffen: Wurde ein Antrag als ANGENOMMEN oder ABGELEHNT gekennzeichnet?
+    if (this.hasLoadedCloudSession && this.currentSession.antraege) {
+      merged.antraege.forEach((newA) => {
+        if (newA.plenumResult) {
+          const oldA = this.currentSession.antraege?.find((a) => a.id === newA.id);
+          if (!oldA || oldA.plenumResult !== newA.plenumResult) {
+            this.triggerNotification({
+              id: `decision_${newA.id}_${newA.plenumResult}`,
+              title: newA.plenumResult === 'ANGENOMMEN' ? '🎉 Antrag angenommen!' : '❌ Antrag abgelehnt',
+              message: `Antrag "${newA.title}" wurde vom Plenum ${newA.plenumResult === 'ANGENOMMEN' ? 'angenommen' : 'abgelehnt'}.`,
+              type: newA.plenumResult === 'ANGENOMMEN' ? 'vote' : 'system',
+              timestamp: new Date().toISOString(),
+              antragId: newA.id,
+            });
+          }
+        }
+      });
     }
 
     // Supabase ist die offizielle Single Source of Truth für alle Teilnehmer im Plenum
@@ -534,6 +566,20 @@ class SipRealtimeService {
         break;
       }
 
+      case 'ANTRAG_DECIDED': {
+        this.currentSession = {
+          ...this.currentSession,
+          antraege: this.currentSession.antraege.map((a) =>
+            a.id === msg.antragId
+              ? { ...a, plenumResult: msg.decision, plenumResultAt: msg.decidedAt }
+              : a
+          ),
+          updatedAt: new Date().toISOString(),
+        };
+        this.notify();
+        break;
+      }
+
       case 'MEME_ADDED': {
         const exists = this.currentSession.memes.some((m) => m.id === msg.meme.id);
         if (!exists) {
@@ -653,6 +699,64 @@ class SipRealtimeService {
       session: this.currentSession,
     };
     this.broadcastMessage(msg, settings);
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
+  }
+
+  /**
+   * Antrag als ANGENOMMEN oder ABGELEHNT kennzeichnen
+   */
+  public async decideAntrag(
+    antragId: string,
+    decision: 'ANGENOMMEN' | 'ABGELEHNT',
+    settings?: AppSettings
+  ) {
+    this.lastLocalMutationAt = Date.now();
+    const decidedAt = new Date().toISOString();
+    const antrag = this.currentSession.antraege.find((a) => a.id === antragId);
+
+    this.logActivity({
+      action: 'ANTRAG_DECIDED',
+      antragId,
+      antragTitle: antrag?.title || antragId,
+      performedBy: 'Strategieführung',
+      details: `Antrag "${antrag?.title || antragId}" wurde als ${decision} markiert.`,
+    });
+
+    this.currentSession = {
+      ...this.currentSession,
+      antraege: this.currentSession.antraege.map((a) =>
+        a.id === antragId
+          ? { ...a, plenumResult: decision, plenumResultAt: decidedAt }
+          : a
+      ),
+      updatedAt: decidedAt,
+    };
+    this.saveToStorage();
+    this.notify();
+
+    this.triggerNotification({
+      id: `decision_${antragId}_${decision}`,
+      title: decision === 'ANGENOMMEN' ? '🎉 Antrag angenommen!' : '❌ Antrag abgelehnt',
+      message: `Antrag "${antrag?.title || antragId}" wurde vom Plenum ${decision === 'ANGENOMMEN' ? 'angenommen' : 'abgelehnt'}.`,
+      type: decision === 'ANGENOMMEN' ? 'vote' : 'system',
+      timestamp: decidedAt,
+      antragId,
+    });
+
+    const msg: SipRealtimeMessage = {
+      type: 'ANTRAG_DECIDED',
+      antragId,
+      decision,
+      decidedAt,
+    };
+    this.broadcastMessage(msg, settings);
+
+    const stateMsg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(stateMsg, settings);
+
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 

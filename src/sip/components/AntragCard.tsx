@@ -56,6 +56,10 @@ export const AntragCard: React.FC<AntragCardProps> = ({
       className={`relative rounded-2xl border transition-all duration-300 p-4 sm:p-5 ${
         antrag.isActive
           ? 'bg-slate-900 border-sky-400 ring-2 ring-sky-400/40 shadow-xl shadow-sky-500/10'
+          : antrag.plenumResult === 'ANGENOMMEN'
+          ? 'bg-slate-900/80 border-emerald-500/50 hover:border-emerald-500/70'
+          : antrag.plenumResult === 'ABGELEHNT'
+          ? 'bg-slate-900/80 border-rose-500/50 hover:border-rose-500/70'
           : isPending
           ? 'bg-slate-900/60 border-amber-500/40'
           : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
@@ -146,9 +150,35 @@ export const AntragCard: React.FC<AntragCardProps> = ({
               </span>
             )}
 
-            <span className="text-xs font-semibold text-sky-300 bg-sky-950/60 border border-sky-500/30 px-2.5 py-0.5 rounded-lg">
-              Antragsteller:in: <strong className="text-white">{antrag.author}</strong>
-            </span>
+            {/* Plenums-Ergebnis Badge falls bereits entschieden */}
+            {antrag.plenumResult && (
+              <span
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-black border ${
+                  antrag.plenumResult === 'ANGENOMMEN'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                }`}
+              >
+                {antrag.plenumResult === 'ANGENOMMEN' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+                    <span>ANGENOMMEN</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    <span>ABGELEHNT</span>
+                  </>
+                )}
+              </span>
+            )}
+
+            {/* Antragsteller:in nur bei Hauptanträgen anzeigen (bei Nebenanträgen steht daneben, wer geclaimed hat) */}
+            {antrag.type === 'HAUPTANTRAG' && (
+              <span className="text-xs font-semibold text-sky-300 bg-sky-950/60 border border-sky-500/30 px-2.5 py-0.5 rounded-lg">
+                Antragsteller:in: <strong className="text-white">{antrag.author}</strong>
+              </span>
+            )}
           </div>
 
           <h3 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
@@ -214,7 +244,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
               </p>
             )}
 
-            {/* Expanded section: Forderungspunkte & Admin Notes */}
+            {/* Expanded section: Forderungspunkte */}
             {isExpanded && (
               <div className="mt-3 space-y-3 pt-3 border-t border-slate-800 animate-in fade-in">
                 {antrag.forderungspunkte && antrag.forderungspunkte.length > 0 && (
@@ -233,21 +263,13 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                     </ul>
                   </div>
                 )}
-
-                {antrag.adminNotes && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200">
-                    <span className="font-bold text-amber-300 block mb-1">🏛️ Stellungnahme Bildungsdirektion Vorarlberg:</span>
-                    <p className="whitespace-pre-wrap leading-relaxed">{antrag.adminNotes}</p>
-                  </div>
-                )}
               </div>
             )}
 
             {/* Toggle button if there is overflow or extra details */}
             {((antrag.rede && (antrag.rede.length > 120 || antrag.rede.includes('\n'))) ||
               (antrag.content && (antrag.content.length > 120 || antrag.content.includes('\n'))) ||
-              (antrag.forderungspunkte && antrag.forderungspunkte.length > 0) ||
-              Boolean(antrag.adminNotes)) && (
+              (antrag.forderungspunkte && antrag.forderungspunkte.length > 0)) && (
               <button
                 type="button"
                 onClick={(e) => {

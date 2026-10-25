@@ -22,6 +22,7 @@ import {
   Clock,
   XCircle,
   X,
+  Check,
   Copy,
   Mic,
   Archive,
@@ -249,6 +250,50 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     });
   }, [activeAntrag, session.antraege, isStrategieLeader, currentUserName]);
 
+  // Live Counters für Header: Angenommene und Abgelehnte Anträge
+  const acceptedCount = useMemo(() => {
+    return session.antraege.filter((a) => a.plenumResult === 'ANGENOMMEN').length;
+  }, [session.antraege]);
+
+  const rejectedCount = useMemo(() => {
+    return session.antraege.filter((a) => a.plenumResult === 'ABGELEHNT').length;
+  }, [session.antraege]);
+
+  // Timer & Fadeout für aktiven Antrag bei Entscheidung (ANGENOMMEN / ABGELEHNT)
+  const [decisionNow, setDecisionNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!activeAntrag?.plenumResult || !activeAntrag?.plenumResultAt) return;
+
+    const interval = setInterval(() => {
+      setDecisionNow(Date.now());
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [activeAntrag?.plenumResult, activeAntrag?.plenumResultAt]);
+
+  const DECISION_FADE_DURATION_MS = 10000; // 10 Sekunden
+  const decisionElapsedMs =
+    activeAntrag?.plenumResult && activeAntrag?.plenumResultAt
+      ? Math.max(0, decisionNow - new Date(activeAntrag.plenumResultAt).getTime())
+      : 0;
+  const isDecisionExpired = decisionElapsedMs >= DECISION_FADE_DURATION_MS;
+  const decisionRemainingSeconds = Math.max(
+    0,
+    Math.ceil((DECISION_FADE_DURATION_MS - decisionElapsedMs) / 1000)
+  );
+  // Linearer Übergang von 1 auf 0 über 10 Sekunden
+  const decisionOpacity = activeAntrag?.plenumResult
+    ? Math.max(0, 1 - decisionElapsedMs / DECISION_FADE_DURATION_MS)
+    : 1;
+
+  // Wenn 10 Sekunden abgelaufen sind, beendet die Strategieführung automatisch den Aufruf
+  useEffect(() => {
+    if (isStrategieLeader && activeAntrag?.plenumResult && isDecisionExpired) {
+      handleClearActiveAntrag();
+    }
+  }, [isStrategieLeader, activeAntrag?.plenumResult, isDecisionExpired]);
+
   // Handlers
   async function handleActivateAntrag(antragId: string) {
     await sipRealtime.activateAntrag(antragId, settings);
@@ -256,6 +301,10 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
   function handleClearActiveAntrag() {
     sipRealtime.clearActiveAntrag(settings);
+  }
+
+  function handleDecideAntrag(antragId: string, decision: 'ANGENOMMEN' | 'ABGELEHNT') {
+    sipRealtime.decideAntrag(antragId, decision, settings);
   }
 
   function handleClaimAntrag(antragId: string) {
@@ -536,8 +585,29 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Role toggle, User badge & Protocol download */}
+        {/* Right: Live Counters, Role toggle, User badge & Protocol download */}
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Live Plenum Result Counters (Angenommen / Abgelehnt) */}
+          <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 p-1 rounded-2xl shadow-inner">
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-black text-xs sm:text-sm"
+              title="Anzahl vom Plenum angenommener Anträge"
+            >
+              <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+              <span>{acceptedCount}</span>
+              <span className="text-[11px] text-emerald-400/80 font-semibold hidden sm:inline">Angenommen</span>
+            </div>
+
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 font-black text-xs sm:text-sm"
+              title="Anzahl vom Plenum abgelehnter Anträge"
+            >
+              <X className="w-4 h-4 text-rose-400 stroke-[3]" />
+              <span>{rejectedCount}</span>
+              <span className="text-[11px] text-rose-400/80 font-semibold hidden sm:inline">Abgelehnt</span>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs">
             <User className="w-3.5 h-3.5 text-sky-400" />
             <span className="text-slate-400">Angemeldet:</span>
@@ -703,41 +773,140 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <div className="space-y-5">
               {/* Active Plenum Banner & Sub-Motions for Leadership */}
               {activeAntrag && (
-                <div className="space-y-4">
-                  <div className="bg-gradient-to-r from-sky-950/60 via-slate-900 to-indigo-950/60 border-2 border-sky-400 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-                    <div className="flex items-center gap-3">
-                      <span className="relative flex h-3.5 w-3.5 shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
-                      </span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider">
-                            Aktuell auf allen Geräten im Plenum aktiv
-                          </span>
-                          <span className={`px-2 py-0.2 rounded text-[10px] font-bold border ${ANTRAG_TYPE_CONFIG[activeAntrag.type]?.badgeColor}`}>
-                            {ANTRAG_TYPE_CONFIG[activeAntrag.type]?.shortLabel}
-                          </span>
+                <div
+                  style={{
+                    opacity: decisionOpacity,
+                    transition: 'opacity 0.1s linear',
+                  }}
+                  className="space-y-4"
+                >
+                  <div
+                    className={`border-2 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col gap-3 transition-colors duration-300 animate-in fade-in ${
+                      activeAntrag.plenumResult === 'ANGENOMMEN'
+                        ? 'bg-gradient-to-r from-emerald-950/80 via-slate-900 to-emerald-950/80 border-emerald-400 ring-2 ring-emerald-400/40'
+                        : activeAntrag.plenumResult === 'ABGELEHNT'
+                        ? 'bg-gradient-to-r from-rose-950/80 via-slate-900 to-rose-950/80 border-rose-500 ring-2 ring-rose-500/40'
+                        : 'bg-gradient-to-r from-sky-950/60 via-slate-900 to-indigo-950/60 border-sky-400'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="relative flex h-4 w-4 shrink-0">
+                          {activeAntrag.plenumResult === 'ANGENOMMEN' ? (
+                            <Check className="w-5 h-5 text-emerald-400 stroke-[3]" />
+                          ) : activeAntrag.plenumResult === 'ABGELEHNT' ? (
+                            <X className="w-5 h-5 text-rose-400 stroke-[3]" />
+                          ) : (
+                            <>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+                            </>
+                          )}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[11px] font-bold uppercase tracking-wider ${
+                                activeAntrag.plenumResult === 'ANGENOMMEN'
+                                  ? 'text-emerald-300'
+                                  : activeAntrag.plenumResult === 'ABGELEHNT'
+                                  ? 'text-rose-300'
+                                  : 'text-sky-400'
+                              }`}
+                            >
+                              {activeAntrag.plenumResult === 'ANGENOMMEN'
+                                ? '🎉 Antrag vom Plenum ANGENOMMEN'
+                                : activeAntrag.plenumResult === 'ABGELEHNT'
+                                ? '❌ Antrag vom Plenum ABGELEHNT'
+                                : 'Aktuell auf allen Geräten im Plenum aktiv'}
+                            </span>
+                            <span className={`px-2 py-0.2 rounded text-[10px] font-bold border ${ANTRAG_TYPE_CONFIG[activeAntrag.type]?.badgeColor}`}>
+                              {ANTRAG_TYPE_CONFIG[activeAntrag.type]?.shortLabel}
+                            </span>
+                          </div>
+                          <h3 className="text-base sm:text-lg font-bold text-white">
+                            {activeAntrag.title}
+                          </h3>
+                          {activeAntrag.claimedBy && (
+                            <p className="text-xs text-emerald-400 font-medium">
+                              🎙️ Redner:in: {activeAntrag.claimedBy}
+                            </p>
+                          )}
                         </div>
-                        <h3 className="text-base sm:text-lg font-bold text-white">
-                          {activeAntrag.title}
-                        </h3>
-                        {activeAntrag.claimedBy && (
-                          <p className="text-xs text-emerald-400 font-medium">
-                            🎙️ Redner:in: {activeAntrag.claimedBy}
-                          </p>
+                      </div>
+
+                      {/* Action Buttons: ANGENOMMEN & ABGELEHNT oder Countdown */}
+                      <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                        {!activeAntrag.plenumResult ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleDecideAntrag(activeAntrag.id, 'ANGENOMMEN')}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-md shadow-emerald-500/20 cursor-pointer transition"
+                              title="Antrag als ANGENOMMEN kennzeichnen (10s Timer startet)"
+                            >
+                              <Check className="w-4 h-4 stroke-[3]" />
+                              <span>ANGENOMMEN</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDecideAntrag(activeAntrag.id, 'ABGELEHNT')}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs shadow-md shadow-rose-600/20 cursor-pointer transition"
+                              title="Antrag als ABGELEHNT kennzeichnen (10s Timer startet)"
+                            >
+                              <X className="w-4 h-4 stroke-[3]" />
+                              <span>ABGELEHNT</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleClearActiveAntrag}
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold cursor-pointer transition"
+                              title="Beendet die Live-Anzeige im Plenum (Pause)"
+                            >
+                              <span>Aufruf beenden (Pause)</span>
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider border flex items-center gap-1.5 ${
+                                activeAntrag.plenumResult === 'ANGENOMMEN'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              }`}
+                            >
+                              <span>Schließt in {decisionRemainingSeconds}s...</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleClearActiveAntrag}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer"
+                              title="Sofort schließen"
+                            >
+                              Sofort schließen
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleClearActiveAntrag}
-                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold self-start sm:self-auto cursor-pointer transition"
-                      title="Beendet die Live-Anzeige im Plenum (Mitglieder kehren auf den Warteraum zurück)"
-                    >
-                      <span>Aufruf beenden (Pause)</span>
-                    </button>
+                    {/* Countdown Progress Bar */}
+                    {activeAntrag.plenumResult && (
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mt-1">
+                        <div
+                          className={`h-full transition-all duration-100 ease-linear ${
+                            activeAntrag.plenumResult === 'ANGENOMMEN'
+                              ? 'bg-emerald-400'
+                              : 'bg-rose-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, (decisionElapsedMs / DECISION_FADE_DURATION_MS) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Nebenanträge zu diesem aktiven Hauptantrag */}
@@ -1054,20 +1223,55 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             /* B: MITGLIEDER-VIEW (Immer nur der von der Strategieführung freigegebene TOP) */
             /* ========================================================================= */
             <div className="space-y-5">
-              {activeAntrag ? (
-                <div className="space-y-5">
+              {activeAntrag && !isDecisionExpired ? (
+                <div
+                  style={{
+                    opacity: decisionOpacity,
+                    transition: 'opacity 0.1s linear',
+                  }}
+                  className="space-y-5"
+                >
                   {/* Hero Card des aktuell freigegebenen Antrags */}
-                  <div className="relative bg-slate-900 border-2 border-sky-400 rounded-3xl p-5 sm:p-7 shadow-2xl shadow-sky-500/15 overflow-hidden">
+                  <div
+                    className={`relative rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden border-2 transition-colors duration-300 ${
+                      activeAntrag.plenumResult === 'ANGENOMMEN'
+                        ? 'bg-slate-900 border-emerald-400 ring-2 ring-emerald-400/40 shadow-emerald-500/20'
+                        : activeAntrag.plenumResult === 'ABGELEHNT'
+                        ? 'bg-slate-900 border-rose-500 ring-2 ring-rose-500/40 shadow-rose-500/20'
+                        : 'bg-slate-900 border-sky-400 shadow-sky-500/15'
+                    }`}
+                  >
                     {/* Background glow */}
-                    <div className="absolute -top-24 -right-24 w-56 h-56 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
+                    <div
+                      className={`absolute -top-24 -right-24 w-56 h-56 rounded-full blur-3xl pointer-events-none ${
+                        activeAntrag.plenumResult === 'ANGENOMMEN'
+                          ? 'bg-emerald-500/20'
+                          : activeAntrag.plenumResult === 'ABGELEHNT'
+                          ? 'bg-rose-500/20'
+                          : 'bg-sky-500/15'
+                      }`}
+                    />
 
                     {/* Top Header Badge */}
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-800">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-black uppercase tracking-wider">
-                          <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
-                          Aktuell im Plenum aufgerufen
-                        </span>
+                        {activeAntrag.plenumResult === 'ANGENOMMEN' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-black uppercase tracking-wider">
+                            <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+                            <span>Vom Plenum ANGENOMMEN (schließt in {decisionRemainingSeconds}s...)</span>
+                          </span>
+                        ) : activeAntrag.plenumResult === 'ABGELEHNT' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-black uppercase tracking-wider">
+                            <X className="w-4 h-4 text-rose-400 stroke-[3]" />
+                            <span>Vom Plenum ABGELEHNT (schließt in {decisionRemainingSeconds}s...)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-black uppercase tracking-wider">
+                            <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                            <span>Aktuell im Plenum aufgerufen</span>
+                          </span>
+                        )}
+
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold border ${
                             ANTRAG_TYPE_CONFIG[activeAntrag.type]?.badgeColor || 'bg-slate-800 text-slate-200'
@@ -1089,44 +1293,29 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Motion Title & Content */}
-                    <h2 className="text-xl sm:text-2xl font-black text-white mb-3 leading-tight">
-                      {activeAntrag.title}
-                    </h2>
-
-                    {/* 1. Forderungen des Vorarlberger Schüler:innenparlaments (standardmäßig ausgeklappt) */}
-                    {activeAntrag.forderungspunkte && activeAntrag.forderungspunkte.length > 0 && (
-                      <div className="bg-gradient-to-r from-sky-950/60 via-slate-950 to-indigo-950/50 border border-sky-500/40 rounded-2xl p-4 sm:p-5 mb-4 shadow-lg">
-                        <div className="flex items-center gap-2 text-sm sm:text-base font-bold text-sky-300 mb-3 pb-2 border-b border-sky-500/20">
-                          <Target className="w-4 h-4 sm:w-5 sm:h-5 text-sky-400 shrink-0" />
-                          <span>Daher fordert das Vorarlberger Schüler:innenparlament ({activeAntrag.forderungspunkte.length}):</span>
-                        </div>
-                        <ul className="space-y-2.5">
-                          {activeAntrag.forderungspunkte.map((fp, idx) => (
-                            <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-slate-100">
-                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/40">
-                                {idx + 1}
-                              </span>
-                              <span className="leading-relaxed font-medium">{fp}</span>
-                            </li>
-                          ))}
-                        </ul>
-
-                        {activeAntrag.adminNotes && (
-                          <div className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs sm:text-sm text-amber-200">
-                            <span className="font-bold block text-amber-300 mb-1">
-                              🏛️ Stellungnahme & Erläuterung der Bildungsdirektion:
-                            </span>
-                            <p className="leading-relaxed whitespace-pre-wrap">
-                              {activeAntrag.adminNotes}
-                            </p>
-                          </div>
-                        )}
+                    {/* Countdown Progress Bar wenn entschieden */}
+                    {activeAntrag.plenumResult && (
+                      <div className="w-full bg-slate-800/80 rounded-full h-1.5 overflow-hidden mb-4">
+                        <div
+                          className={`h-full transition-all duration-100 ease-linear ${
+                            activeAntrag.plenumResult === 'ANGENOMMEN'
+                              ? 'bg-emerald-400'
+                              : 'bg-rose-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, (decisionElapsedMs / DECISION_FADE_DURATION_MS) * 100)}%`,
+                          }}
+                        />
                       </div>
                     )}
 
-                    {/* 2. Antragstext / Vorbereitete Rede (getrennt, standardmäßig eingeklappt) */}
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-5 shadow-inner">
+                    {/* Motion Title */}
+                    <h2 className="text-xl sm:text-2xl font-black text-white mb-4 leading-tight">
+                      {activeAntrag.title}
+                    </h2>
+
+                    {/* 1. Antragstext / Vorbereitete Rede (VOR den Forderungspunkten, standardmäßig eingeklappt) */}
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 mb-4 shadow-inner">
                       <div className="flex items-center justify-between gap-3 mb-2.5 pb-2 border-b border-slate-800">
                         <div className="flex items-center gap-2">
                           <Mic className="w-4 h-4 text-indigo-400" />
@@ -1191,6 +1380,26 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                         )}
                       </button>
                     </div>
+
+                    {/* 2. Forderungen des Vorarlberger Schüler:innenparlaments (standardmäßig ausgeklappt) */}
+                    {activeAntrag.forderungspunkte && activeAntrag.forderungspunkte.length > 0 && (
+                      <div className="bg-gradient-to-r from-sky-950/60 via-slate-950 to-indigo-950/50 border border-sky-500/40 rounded-2xl p-4 sm:p-5 shadow-lg">
+                        <div className="flex items-center gap-2 text-sm sm:text-base font-bold text-sky-300 mb-3 pb-2 border-b border-sky-500/20">
+                          <Target className="w-4 h-4 sm:w-5 sm:h-5 text-sky-400 shrink-0" />
+                          <span>Daher fordert das Vorarlberger Schüler:innenparlament ({activeAntrag.forderungspunkte.length}):</span>
+                        </div>
+                        <ul className="space-y-2.5">
+                          {activeAntrag.forderungspunkte.map((fp, idx) => (
+                            <li key={idx} className="flex items-start gap-3 text-xs sm:text-sm text-slate-100">
+                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0 mt-0.5 border border-sky-500/40">
+                                {idx + 1}
+                              </span>
+                              <span className="leading-relaxed font-medium">{fp}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                   </div>
 

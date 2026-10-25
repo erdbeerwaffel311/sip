@@ -175,11 +175,6 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   }, [filteredAntraege]);
 
 
-  // Zähler für Anträge zur Prüfung
-  const pendingCount = useMemo(() => {
-    return session.antraege.filter((a) => a.status === 'pending_approval').length;
-  }, [session.antraege]);
-
   // Aktuell im Plenum aufgerufener Antrag
   const activeAntrag = useMemo(() => {
     if (session.activeAntragId) {
@@ -188,6 +183,35 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     }
     return session.antraege.find((a) => a.isActive) || null;
   }, [session.activeAntragId, session.antraege]);
+
+  // Anträge zur Prüfung für Strategieführung (während der Pause keine Nebenanträge zu vergangenen Hauptanträgen)
+  const pendingAntraege = useMemo(() => {
+    return session.antraege.filter((a) => {
+      if (a.status !== 'pending_approval') return false;
+      // Während der Pause (kein aktiver Antrag) sollen Nebenanträge zu vergangenen Hauptanträgen nicht aufscheinen
+      if (!activeAntrag && (a.parentAntragId || a.type !== 'HAUPTANTRAG')) {
+        return false;
+      }
+      // Wenn ein Hauptantrag aktiv ist, keine Nebenanträge zu anderen (vergangenen) Hauptanträgen
+      if (activeAntrag && a.parentAntragId && a.parentAntragId !== activeAntrag.id) {
+        return false;
+      }
+      return true;
+    });
+  }, [session.antraege, activeAntrag]);
+
+  // Zähler für Anträge zur Prüfung
+  const pendingCount = pendingAntraege.length;
+
+  // Im Warteraum während der Pause: Nebenanträge zu vergangenen Hauptanträgen nicht aufscheinen lassen
+  const warteraumAntraege = useMemo(() => {
+    return session.antraege.filter((a) => {
+      if (a.isPreFab) return false;
+      // Nebenanträge zu vergangenen Hauptanträgen während der Pause ausblenden:
+      if (a.parentAntragId || a.type !== 'HAUPTANTRAG') return false;
+      return true;
+    });
+  }, [session.antraege]);
 
   // Spezifisch zu diesem aktiven Hauptantrag eingereichte Nebenanträge (ÄA, EA, SA, WM)
   const activeSubAntraege = useMemo(() => {
@@ -863,7 +887,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                 </div>
 
                 <div className="text-xs text-slate-400 font-medium">
-                  Zeige {filteredAntraege.length} von {session.antraege.length} Anträgen (Strategieführungs-Ansicht)
+                  Zeige {hauptAntraege.length} von {session.antraege.filter((a) => a.type === 'HAUPTANTRAG').length} Hauptanträgen (Strategieführungs-Ansicht)
                 </div>
               </div>
 
@@ -960,11 +984,9 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     </h3>
                   </div>
                   <div className="space-y-3">
-                    {session.antraege
-                      .filter((a) => a.status === 'pending_approval')
-                      .map((antrag) => (
-                        <AntragCard
-                          key={antrag.id}
+                    {pendingAntraege.map((antrag) => (
+                      <AntragCard
+                        key={antrag.id}
                           antrag={antrag}
                           currentUserName={currentUserName}
                           isStrategieLeader={true}
@@ -1321,16 +1343,14 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                     <span>Antrag / Wortmeldung vorab vorbereiten</span>
                   </button>
 
-                  {/* Eingereichte Anträge aus dem Plenum im Warteraum anzeigen */}
-                  {session.antraege.filter((a) => !a.isPreFab).length > 0 && (
+                  {/* Eingereichte Anträge aus dem Plenum im Warteraum anzeigen (während der Pause keine Nebenanträge zu vergangenen Hauptanträgen) */}
+                  {warteraumAntraege.length > 0 && (
                     <div className="w-full max-w-2xl mt-8 text-left bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
                         Aus dem Plenum eingereichte Anträge:
                       </h4>
                       <div className="space-y-2.5">
-                        {session.antraege
-                          .filter((a) => !a.isPreFab)
-                          .map((a) => (
+                        {warteraumAntraege.map((a) => (
                             <div key={a.id} className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
                               <div className="flex items-center justify-between gap-2 mb-1">
                                 <span className="font-bold text-slate-200">{a.title}</span>

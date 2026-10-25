@@ -53,14 +53,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
   return (
     <div
       id={`antrag-${antrag.id}`}
-      onClick={() => {
-        if (isStrategieLeader && antrag.type === 'HAUPTANTRAG') {
-          onActivate(antrag);
-        }
-      }}
       className={`relative rounded-2xl border transition-all duration-300 p-4 sm:p-5 ${
-        isStrategieLeader && antrag.type === 'HAUPTANTRAG' ? 'cursor-pointer hover:border-sky-500/60 hover:shadow-lg' : ''
-      } ${
         antrag.isActive
           ? 'bg-slate-900 border-sky-400 ring-2 ring-sky-400/40 shadow-xl shadow-sky-500/10'
           : isPending
@@ -197,12 +190,26 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                     </button>
                   )}
                 </div>
-                <p className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans ${isExpanded ? '' : 'line-clamp-2'}`}>
+                <p
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(!isExpanded);
+                  }}
+                  className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans cursor-pointer hover:text-white transition ${isExpanded ? '' : 'line-clamp-2'}`}
+                  title={isExpanded ? 'Klicken zum Einklappen' : 'Klicken zum Aufklappen'}
+                >
                   {antrag.rede}
                 </p>
               </>
             ) : (
-              <p className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans ${isExpanded ? '' : 'line-clamp-2'}`}>
+              <p
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsExpanded(!isExpanded);
+                }}
+                className={`text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-wrap font-sans cursor-pointer hover:text-white transition ${isExpanded ? '' : 'line-clamp-2'}`}
+                title={isExpanded ? 'Klicken zum Einklappen' : 'Klicken zum Aufklappen'}
+              >
                 {antrag.content}
               </p>
             )}
@@ -214,7 +221,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                   <div className="bg-sky-950/40 border border-sky-500/30 rounded-xl p-3 sm:p-3.5">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300 mb-2">
                       <Target className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Konkrete Forderungen ({antrag.forderungspunkte.length}):</span>
+                      <span>Daher fordert das Vorarlberger Schüler:innenparlament ({antrag.forderungspunkte.length}):</span>
                     </div>
                     <ul className="space-y-1.5">
                       {antrag.forderungspunkte.map((f, idx) => (
@@ -257,7 +264,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                 ) : (
                   <>
                     <ChevronDown className="w-3.5 h-3.5" />
-                    <span>Ganzen Antragstext & Details anzeigen (Aufklappen)</span>
+                    <span>Ganzen Antragstext & Details zeigen (Aufklappen)</span>
                   </>
                 )}
               </button>

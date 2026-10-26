@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
-import { AutoImportResult, AutoImportProgress } from '../utils/sipAutoImporter';
+import { AutoImportResult, AutoImportProgress, parseAntragsmappeText } from '../utils/sipAutoImporter';
 import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
+import { extractTextFromPdfArrayBuffer } from '../utils/pdfHelper';
 
 interface MotionParserModalProps {
   onClose: () => void;
@@ -90,18 +91,77 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   async function handleManualPdfSelected(file: File) {
     if (!file) return;
     setIsProcessing(true);
-    setImportProgress({ percent: 20, statusText: `Lese ${file.name} ein...` });
+    setImportProgress({ percent: 15, statusText: `Lese manuell hochgeladene Datei ${file.name} ein...` });
+
     try {
+      // 1. Wandle in ArrayBuffer um und nutze denselben PDF-Parser (parseAntragsmappeText)
       const arrayBuffer = await file.arrayBuffer();
-      const res = await executeOnlineDriveImport({
+      const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer);
+      const { hauptAntraege } = parseAntragsmappeText(pdfText);
+      const hauptantraege = hauptAntraege;
+
+      // 4. Gefordertes Logging
+      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
+
+      const baseTimestamp = Date.now();
+      const hauptantraegeAusPDF: SipAntrag[] = hauptantraege.map((h, hIdx) => ({
+        id: `antrag_${hIdx + 1}`,
+        type: 'HAUPTANTRAG' as const,
+        orderIndex: hIdx,
+        title: h.cleanTitle,
+        author: h.author || 'Schüler:innenparlament',
+        rede: h.content,
+        content: h.content,
+        forderungspunkte: h.forderungspunkte || [],
+        lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
+        isPreFab: true,
+        status: 'approved' as const,
+        claimedBy: null,
+        claimedAt: null,
+        isActive: false,
+        createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
+      }));
+
+      // Lade die DOCX-Strategiedateien aus dem Google Drive Ordner herunter und parse deren Nebenanträge
+      setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+      const importResult = await executeOnlineDriveImport({
         folderUrlOrId: driveUrlInput.trim(),
         manualPdfBuffer: arrayBuffer,
         cachedManifest: pendingManifest || undefined,
         onProgress: (p) => setImportProgress(p),
       });
-      setAutoResult(res);
+
+      // Nebenanträge/Wortmeldungen aus den DOCX-Dateien
+      const nebenantraegeAusDOCX = importResult.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+
+      // 2. Strikter Merge der Arrays
+      const allMotions = [...hauptantraegeAusPDF, ...nebenantraegeAusDOCX];
+      allMotions.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+      console.log(
+        `[FINAL-MERGE] Gesamt: ${allMotions.length} Anträge (${hauptantraegeAusPDF.length} Hauptanträge, ${nebenantraegeAusDOCX.length} Nebenanträge)`
+      );
+
+      const finalResult: AutoImportResult = {
+        success: allMotions.length > 0,
+        message: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
+        antraege: allMotions,
+        summary: {
+          hauptAntraegeCount: hauptantraegeAusPDF.length,
+          subAntraegeCount: nebenantraegeAusDOCX.length,
+          matchedSectionsCount: importResult.summary.matchedSectionsCount,
+          goExcluded: importResult.summary.goExcluded,
+          strategyFilesCount: importResult.summary.strategyFilesCount,
+        },
+        strategyNotes: importResult.strategyNotes,
+      };
+
+      setAutoResult(finalResult);
       setManualUploadRequired(false);
       setPendingManifest(null);
+
+      // 3. State aktualisieren: Gemeinsames Array an den State / Supabase übergeben
+      onImport(allMotions, finalResult.strategyNotes);
     } catch (err: any) {
       console.error('Fehler nach manuellem PDF-Upload:', err);
       alert('Fehler beim Verarbeiten der hochgeladenen PDF-Datei: ' + (err?.message || err));
@@ -342,6 +402,64 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                       <span className="text-slate-400 block text-[10px]">Geschäftsordnung:</span>
                       <strong className="text-emerald-400 text-xs">Automatisch ignoriert</strong>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Vorschau der geladenen Anträge */}
+              {autoResult && !isProcessing && autoResult.antraege.length > 0 && (
+                <div className="space-y-2 pt-2 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                      Erkannte Anträge ({autoResult.antraege.length}):
+                    </h3>
+                    <span className="text-[11px] text-emerald-400 font-semibold">
+                      {autoResult.summary.hauptAntraegeCount} Hauptanträge &bull; {autoResult.summary.subAntraegeCount} Nebenanträge
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {autoResult.antraege.map((item) => {
+                      const conf = ANTRAG_TYPE_CONFIG[item.type] || ANTRAG_TYPE_CONFIG.SONSTIGES;
+                      const isHaupt = item.type === 'HAUPTANTRAG';
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3 rounded-xl border flex items-start gap-3 ${
+                            isHaupt
+                              ? 'bg-purple-950/30 border-purple-500/50'
+                              : 'bg-slate-950/70 border-slate-800/80'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded border ${conf.badgeColor}`}
+                              >
+                                {conf.shortLabel}
+                              </span>
+                              {item.lineOrParagraph && (
+                                <span className="text-[10px] text-slate-400">
+                                  📍 {item.lineOrParagraph}
+                                </span>
+                              )}
+                              {item.author && (
+                                <span className="text-[10px] text-slate-400 truncate">
+                                  von {item.author}
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-xs font-bold text-white line-clamp-1">
+                              {item.title}
+                            </h4>
+                            {item.content && (
+                              <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
+                                {item.content}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

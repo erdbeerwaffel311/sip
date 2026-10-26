@@ -521,54 +521,52 @@ export async function executeOnlineDriveImport(
 
   // 2. Antragsmappe (PDF) verarbeiten (per manuellem Buffer oder automatischem Download)
   let antragsmappeText = '';
-  if (manifest.antragsmappe) {
-    if (manualPdfBuffer) {
+  if (manualPdfBuffer) {
+    onProgress?.({
+      percent: 24,
+      statusText: 'Verarbeite manuell hochgeladene Antragsmappe...',
+    });
+    try {
+      antragsmappeText = await extractTextFromPdfArrayBuffer(manualPdfBuffer);
+    } catch (pdfErr) {
+      console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
+      antragsmappeText = await extractTextFromDocxArrayBuffer(manualPdfBuffer);
+    }
+    const { hauptAntraege } = parseAntragsmappeText(antragsmappeText);
+    const hauptantraege = hauptAntraege;
+    console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
+  } else if (manifest.antragsmappe) {
+    onProgress?.({
+      percent: 18,
+      statusText: `Lade Antragsmappe herunter (${manifest.antragsmappe.name})...`,
+    });
+    try {
+      const pdfBuffer = await downloadDriveFileAsArrayBuffer(
+        manifest.antragsmappe,
+        (status) => onProgress?.({ percent: 22, statusText: status })
+      );
+
       onProgress?.({
-        percent: 24,
-        statusText: `Verarbeite manuell hochgeladene Antragsmappe (${manifest.antragsmappe.name})...`,
+        percent: 26,
+        statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
       });
       try {
-        antragsmappeText = await extractTextFromPdfArrayBuffer(manualPdfBuffer);
+        antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
       } catch (pdfErr) {
         console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
-        antragsmappeText = await extractTextFromDocxArrayBuffer(manualPdfBuffer);
+        antragsmappeText = await extractTextFromDocxArrayBuffer(pdfBuffer);
       }
       console.log(
-        `[MANUAL-PDF] Antragsmappe "${manifest.antragsmappe.name}" aus manuellem Upload extrahiert (${antragsmappeText.length} Zeichen)`
+        `[DRIVE-PDF] Antragsmappe "${manifest.antragsmappe.name}" extrahiert (${antragsmappeText.length} Zeichen)`
       );
-    } else {
-      onProgress?.({
-        percent: 18,
-        statusText: `Lade Antragsmappe herunter (${manifest.antragsmappe.name})...`,
-      });
-      try {
-        const pdfBuffer = await downloadDriveFileAsArrayBuffer(
-          manifest.antragsmappe,
-          (status) => onProgress?.({ percent: 22, statusText: status })
-        );
-
-        onProgress?.({
-          percent: 26,
-          statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
-        });
-        try {
-          antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
-        } catch (pdfErr) {
-          console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
-          antragsmappeText = await extractTextFromDocxArrayBuffer(pdfBuffer);
-        }
-        console.log(
-          `[DRIVE-PDF] Antragsmappe "${manifest.antragsmappe.name}" extrahiert (${antragsmappeText.length} Zeichen)`
-        );
-      } catch (err: any) {
-        console.warn('Download der Antragsmappe fehlgeschlagen:', err);
-        const blockedErr = new DriveDownloadBlockedError(
-          manifest.antragsmappe,
-          err.status || 403,
-          manifest
-        );
-        throw blockedErr;
-      }
+    } catch (err: any) {
+      console.warn('Download der Antragsmappe fehlgeschlagen:', err);
+      const blockedErr = new DriveDownloadBlockedError(
+        manifest.antragsmappe,
+        err.status || 403,
+        manifest
+      );
+      throw blockedErr;
     }
   }
 

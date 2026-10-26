@@ -25,8 +25,9 @@ import {
   deleteArchivedSession,
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
-import { AutoImportResult, AutoImportProgress } from '../utils/sipAutoImporter';
+import { AutoImportResult, AutoImportProgress, parseAntragsmappeText } from '../utils/sipAutoImporter';
 import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
+import { extractTextFromPdfArrayBuffer } from '../utils/pdfHelper';
 
 /**
  * Berechnet intelligent den Folgetitel für ein Schüler:innenparlament:
@@ -200,16 +201,72 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   async function handleManualPdfSelected(file: File) {
     if (!file) return;
     setIsProcessingFiles(true);
-    setImportProgress({ percent: 20, statusText: `Lese ${file.name} ein...` });
+    setImportProgress({ percent: 15, statusText: `Lese manuell hochgeladene Datei ${file.name} ein...` });
+
     try {
+      // 1. Wandle in ArrayBuffer um und nutze denselben PDF-Parser (parseAntragsmappeText)
       const arrayBuffer = await file.arrayBuffer();
-      const res = await executeOnlineDriveImport({
+      const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer);
+      const { hauptAntraege } = parseAntragsmappeText(pdfText);
+      const hauptantraege = hauptAntraege;
+
+      // 4. Gefordertes Logging
+      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
+
+      const baseTimestamp = Date.now();
+      const hauptantraegeAusPDF: SipAntrag[] = hauptantraege.map((h, hIdx) => ({
+        id: `antrag_${hIdx + 1}`,
+        type: 'HAUPTANTRAG' as const,
+        orderIndex: hIdx,
+        title: h.cleanTitle,
+        author: h.author || 'Schüler:innenparlament',
+        rede: h.content,
+        content: h.content,
+        forderungspunkte: h.forderungspunkte || [],
+        lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
+        isPreFab: true,
+        status: 'approved' as const,
+        claimedBy: null,
+        claimedAt: null,
+        isActive: false,
+        createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
+      }));
+
+      // Lade die DOCX-Strategiedateien aus dem Google Drive Ordner herunter und parse deren Nebenanträge
+      setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+      const importResult = await executeOnlineDriveImport({
         folderUrlOrId: newDriveFolderUrl.trim(),
         manualPdfBuffer: arrayBuffer,
         cachedManifest: pendingManifest || undefined,
         onProgress: (p) => setImportProgress(p),
       });
-      setImportResult(res);
+
+      // Nebenanträge/Wortmeldungen aus den DOCX-Dateien
+      const nebenantraegeAusDOCX = importResult.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+
+      // 2. Strikter Merge der Arrays
+      const allMotions = [...hauptantraegeAusPDF, ...nebenantraegeAusDOCX];
+      allMotions.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+      console.log(
+        `[FINAL-MERGE] Gesamt: ${allMotions.length} Anträge (${hauptantraegeAusPDF.length} Hauptanträge, ${nebenantraegeAusDOCX.length} Nebenanträge)`
+      );
+
+      const finalResult: AutoImportResult = {
+        success: allMotions.length > 0,
+        message: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
+        antraege: allMotions,
+        summary: {
+          hauptAntraegeCount: hauptantraegeAusPDF.length,
+          subAntraegeCount: nebenantraegeAusDOCX.length,
+          matchedSectionsCount: importResult.summary.matchedSectionsCount,
+          goExcluded: importResult.summary.goExcluded,
+          strategyFilesCount: importResult.summary.strategyFilesCount,
+        },
+        strategyNotes: importResult.strategyNotes,
+      };
+
+      setImportResult(finalResult);
       setManualUploadRequired(false);
       setPendingManifest(null);
     } catch (err: any) {

@@ -238,6 +238,19 @@ export function parseAntragsmappeText(rawText: string): {
     }
   }
 
+  // Variante B2: Standalone Antragsnummer auf eigener Zeile ("1", "2", "3") gefolgt von Titel und Antragsteller:in
+  if (rawBlocks.length <= 1) {
+    const standaloneNumRegex =
+      /(?=(?:^|\r?\n)(?:---\s*seite\s*\d+\s*---\s*\r?\n)?\s*\d{1,2}\s*\r?\n\s*[^\r\n]{3,140}\r?\n\s*(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von)\s*[:\-])/gi;
+    const standaloneSplit = cleanText
+      .split(standaloneNumRegex)
+      .map((b) => b.trim())
+      .filter((b) => b.length > 15);
+    if (standaloneSplit.length > 1) {
+      rawBlocks = standaloneSplit;
+    }
+  }
+
   // Variante C: Titelzeile direkt vor "Antragsteller_in:" / "Antragssteller:in:"
   if (rawBlocks.length <= 1) {
     const authorHeaderRegex =
@@ -323,7 +336,9 @@ export function parseAntragsmappeText(rawText: string): {
     }
 
     // 1. Antragsnummer isolieren
-    const numMatch = headerLine.match(/\b(?:(?:haupt)?antrag|top)\s*(\d{1,2})\b/i);
+    const numMatch =
+      headerLine.match(/\b(?:(?:haupt)?antrag|top)\s*(\d{1,2})\b/i) ||
+      (lines[0] && /^\d{1,2}$/.test(lines[0]) ? [null, lines[0]] : null);
     const motionNum = fileMetaNum || (numMatch ? parseInt(numMatch[1], 10) : counter);
     const lineOrParagraph = `Antrag ${motionNum}`;
 
@@ -528,122 +543,101 @@ function isPlaceholderClaim(candidate: string): boolean {
   return false;
 }
 
+export interface ExtractedSubMotion {
+  targetMotionNumber?: number;
+  targetMotionTitle?: string;
+  type: AntragType;
+  title: string;
+  content: string;
+  lineOrParagraph?: string;
+  author?: string;
+  claimedBy?: string;
+}
+
 /**
- * Extrahiert Strategien, Forderungspunkte, Autor:innen & Nebenanträge (ÄA, EA, SA, WM)
- * aus einer oder mehreren Strategiedateien.
+ * PHASE 2: Reiner ZULIEFERER für Nebenanträge und Wortmeldungen aus Strategiedokumenten (.docx).
+ * Liest KEINE Hauptanträge aus! Ignoriert jeden Text, der für den Hauptantrag gedacht wäre
+ * (wie z. B. 'Siehe SiP-Antragsmappe' oder interne Strategienotizen).
+ * Scannt AUSSCHLIESSLICH nach Mustern für Nebenanträge (ÄA, EA, SA) und Wortmeldungen (WM).
  */
-export function parseStrategieText(rawText: string): {
-  sections: ParsedStrategieSection[];
+export function parseStrategieSubMotions(rawText: string): {
+  subMotions: ExtractedSubMotion[];
   generalStrategyNotes: string;
 } {
   if (!rawText || !rawText.trim()) {
-    return { sections: [], generalStrategyNotes: '' };
+    return { subMotions: [], generalStrategyNotes: '' };
   }
 
   const normalizedRaw = rawText.normalize('NFC');
   const lines = normalizedRaw.split(/\r?\n/).map((l) => l.trim());
-  const sections: ParsedStrategieSection[] = [];
-  let currentSection: ParsedStrategieSection | null = null;
+  const subMotions: ExtractedSubMotion[] = [];
   const generalNotesLines: string[] = [];
-  let hasFoundFirstMotion = false;
+
+  let currentTargetMotionNumber: number | undefined;
+  let currentTargetMotionTitle: string | undefined;
   let activeForderungspunkt: string | undefined;
-  let expectingForderungspunktText = false;
-  let justOpenedFromFileBanner = false;
-  let isSingleMotionFile = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (!line) continue;
 
-    // 1. Prüfe auf Datei-Trenner "--- Strategie: <Dateiname> ---" oder "---"
-    if (/^---\s*$/i.test(line)) {
-      activeForderungspunkt = undefined;
-      expectingForderungspunktText = false;
-      justOpenedFromFileBanner = false;
-      isSingleMotionFile = false;
-      continue;
-    }
-
+    // 1. Datei-Trenner "--- Strategie: <Dateiname> ---"
     const fileBannerMatch = line.match(/^---\s*Strategie\s*:\s*(.+?)\s*---$/i);
     if (fileBannerMatch) {
       const rawFileName = fileBannerMatch[1].trim();
       activeForderungspunkt = undefined;
-      expectingForderungspunktText = false;
 
-      // Falls es die Sammeldatei "Erweiterungs-_Abänderungs-_Streichungsanträge..." ist,
-      // öffnen wir noch keine einzelne Antrag-Sektion, sondern lassen die Überschriften darin Sektionen öffnen.
-      if (/erweiterungs.*abänderungs|sammel|legende|formatierung/i.test(rawFileName)) {
-        currentSection = null;
-        justOpenedFromFileBanner = false;
-        isSingleMotionFile = false;
-        continue;
-      }
-
-      const meta = parseSiPFileNameMeta(rawFileName);
-      hasFoundFirstMotion = true;
-      isSingleMotionFile = true;
-      currentSection = {
-        motionNumber: meta.motionNumber,
-        motionTitle: meta.title,
-        author: meta.author,
-        forderungspunkte: [],
-        subAntraege: [],
-        notes: '',
-      };
-      sections.push(currentSection);
-      justOpenedFromFileBanner = true;
-      continue;
-    }
-
-    // 2. Prüfe auf "Antragsteller_in: ..."
-    const authorMatch = line.match(
-      /^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]\s*(.+)$/i
-    );
-    if (authorMatch && currentSection) {
-      justOpenedFromFileBanner = false;
-      expectingForderungspunktText = false;
-      const extractedAuthor = authorMatch[1].trim();
-      if (extractedAuthor) {
-        currentSection.author = extractedAuthor;
-      }
-      continue;
-    }
-
-    // 3. Prüfe auf "Forderungspunkt X:" (in Vorarlberger SiP Strategiedateien)
-    const fpHeaderMatch = line.match(/^forderungspunkt\s*(\d+)\s*[:.]?\s*(.*)$/i);
-    if (fpHeaderMatch && currentSection) {
-      justOpenedFromFileBanner = false;
-      const fpNum = fpHeaderMatch[1];
-      const inlineFpText = (fpHeaderMatch[2] || '').trim();
-      activeForderungspunkt = `FP ${fpNum}`;
-      if (!currentSection.forderungspunkte) {
-        currentSection.forderungspunkte = [];
-      }
-      if (inlineFpText) {
-        currentSection.forderungspunkte.push(inlineFpText);
-        expectingForderungspunktText = false;
+      // Metadaten der Datei ermitteln, um zu wissen, zu welchem Hauptantrag die Nebenanträge gehören
+      if (!/erweiterungs.*abänderungs|sammel|legende|formatierung/i.test(rawFileName)) {
+        const meta = parseSiPFileNameMeta(rawFileName);
+        currentTargetMotionNumber = meta.motionNumber;
+        currentTargetMotionTitle = meta.title;
       } else {
-        expectingForderungspunktText = true;
+        currentTargetMotionNumber = undefined;
+        currentTargetMotionTitle = undefined;
       }
       continue;
     }
 
-    // 4. Prüfe, ob die Zeile ein Nebenantrag oder eine Wortmeldung ist (WM1, SA1, ÄA, AÄ1, EA, (XXX)AÄ1, etc.)
+    // 2. Überschriften in Sammeldateien erkennen (z. B. "Antrag 1:", "Antrag 2", "TOP 3")
+    const headerMatch = line.match(/^(?:strategie\s+(?:für|zu)\s+)?(?:haupt)?antrag\s*(\d+)[:.]?\s*(.*)$/i);
+    if (headerMatch) {
+      currentTargetMotionNumber = parseInt(headerMatch[1], 10);
+      currentTargetMotionTitle = headerMatch[2]?.trim() || undefined;
+      activeForderungspunkt = undefined;
+      continue;
+    }
+
+    // Nummerierte Überschriften wie "1. Titel..."
+    const numHeaderMatch = line.match(/^(\d{1,2})\.\s+([A-ZÄÖÜ].*)$/);
+    if (numHeaderMatch && line.length < 120 && !SUB_MOTION_LINE_REGEX.test(line)) {
+      currentTargetMotionNumber = parseInt(numHeaderMatch[1], 10);
+      currentTargetMotionTitle = numHeaderMatch[2].trim();
+      activeForderungspunkt = undefined;
+      continue;
+    }
+
+    // 3. Forderungspunkt-Bezug für nachfolgende Nebenanträge merken ("Forderungspunkt X:")
+    const fpHeaderMatch = line.match(/^forderungspunkt\s*(\d+)\s*[:.]?/i);
+    if (fpHeaderMatch) {
+      activeForderungspunkt = `FP ${fpHeaderMatch[1]}`;
+      continue;
+    }
+
+    // 4. IGNORE: Ignoriere jeglichen Text, der für den Hauptantrag gedacht wäre!
+    // "Antragstext: Siehe SiP-Antragsmappe", "Antragsteller_in: ...", "Begründung: ..."
+    if (
+      /^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]/i.test(line) ||
+      /^antragstext\s*[:\-]/i.test(line) ||
+      /^siehe\s+sip-?antragsmappe/i.test(line) ||
+      /^strategie\s*[:\-]/i.test(line)
+    ) {
+      continue;
+    }
+
+    // 5. Scan AUSSCHLIESSLICH nach Mustern für Nebenantrag und Wortmeldung
     const subMatch = line.match(SUB_MOTION_LINE_REGEX);
     if (subMatch && subMatch[1]) {
-      justOpenedFromFileBanner = false;
-      expectingForderungspunktText = false;
-      hasFoundFirstMotion = true;
-
-      if (!currentSection) {
-        currentSection = {
-          motionTitle: 'Allgemeine Strategieanträge',
-          forderungspunkte: [],
-          subAntraege: [],
-        };
-        sections.push(currentSection);
-      }
-
       const rawType = subMatch[1].toUpperCase().replace(/[\[\]\s\d]/g, '');
       let detectedType: AntragType = 'AAA';
       if (rawType.includes('EA')) detectedType = 'EA';
@@ -654,7 +648,7 @@ export function parseStrategieText(rawText: string): {
       const meta = (subMatch[2] || '').trim();
       let text = (subMatch[3] || '').trim();
 
-      // Zeilen- oder Forderungspunktbezug (entweder explizit in der Zeile oder aus dem aktuellen Forderungspunkt-Block)
+      // Zeilen- oder Forderungspunktbezug
       let lineOrParagraph: string | undefined;
       const fpMatch = (meta + ' ' + text).match(
         /(?:(?:zu\s+|zur\s+)?(?:fp|forderungspunkt|zeile|z\.)\s*\d+|§\s*\d+)/i
@@ -665,8 +659,7 @@ export function parseStrategieText(rawText: string): {
         lineOrParagraph = activeForderungspunkt;
       }
 
-      // Redner:in / Claim ermitteln (z.B. "(Simon)", "(Emma Battlogg)", "(Leni-)")
-      // Platzhalter wie "(XX)" oder "(XXX)" werden NICHT als Claim gewertet!
+      // Redner:in / Claim ermitteln (z.B. "(Simon)", "(Emma Battlogg)")
       let claimedBy: string | undefined;
       const parenMatches = Array.from((meta + ' ' + text.slice(0, 50)).matchAll(/\(([^)]+)\)/g));
       for (const m of parenMatches) {
@@ -681,8 +674,7 @@ export function parseStrategieText(rawText: string): {
         }
       }
 
-      // Sammle den gesamten Text der Wortmeldung / des Nebenantrags:
-      // Auch mehrzeiliger Fließtext wird vollständig bis zum nächsten Eintrag erfasst!
+      // Mehrzeiligen Fließtext des Nebenantrags einsammeln
       const contentLines: string[] = [];
       if (text) contentLines.push(text);
 
@@ -692,7 +684,7 @@ export function parseStrategieText(rawText: string): {
         !SUB_MOTION_LINE_REGEX.test(lines[i + 1]) &&
         !/^forderungspunkt\s*\d+/i.test(lines[i + 1]) &&
         !/^---\s*Strategie/i.test(lines[i + 1]) &&
-        !/^(?:antrags?steller|strategie|abstimmungsempfehlung)\b/i.test(lines[i + 1])
+        !/^(?:antrags?steller|strategie|abstimmungsempfehlung|antragstext)\b/i.test(lines[i + 1])
       ) {
         contentLines.push(lines[i + 1]);
         i++;
@@ -700,7 +692,6 @@ export function parseStrategieText(rawText: string): {
 
       let fullContent = contentLines.join('\n').trim();
 
-      // Bereinige den Text von vorangestellten Klammern mit Name/Platzhalter
       if (fullContent) {
         fullContent = fullContent.replace(/^\([xX\?\s\-]+\)[:\s-]*/, '').trim();
         if (claimedBy) {
@@ -709,7 +700,6 @@ export function parseStrategieText(rawText: string): {
         }
       }
 
-      // Spezifische Behandlung für kurze Anträge wie "SA (Luka): FP5" oder "SA (FP6)"
       const fpOnlyMatch = (fullContent || line).match(/(?:(?:zu\s+|zur\s+)?(?:fp|forderungspunkt)\s*(\d+))/i);
       if (fpOnlyMatch && (!lineOrParagraph || lineOrParagraph.length === 0)) {
         lineOrParagraph = `FP ${fpOnlyMatch[1]}`;
@@ -733,10 +723,11 @@ export function parseStrategieText(rawText: string): {
       const numSuffixMatch = subMatch[1].match(/\d+/);
       const typeLabel = numSuffixMatch ? `${shortType} ${numSuffixMatch[0]}` : shortType;
       const cleanFp = lineOrParagraph ? lineOrParagraph.replace(/^(?:zu|zur)\s+/i, '').trim() : undefined;
-      // Titel enthält NUR den Typ & den Forderungspunktbezug – NIEMALS Personennamen oder "(XX)"
       const title = cleanSubMotionTitle(cleanFp ? `${typeLabel} (${cleanFp})` : typeLabel);
 
-      const parsedSub: ParsedSubAntrag = {
+      const parsedSub: ExtractedSubMotion = {
+        targetMotionNumber: currentTargetMotionNumber,
+        targetMotionTitle: currentTargetMotionTitle,
         type: detectedType,
         title,
         content: fullContent,
@@ -745,153 +736,72 @@ export function parseStrategieText(rawText: string): {
         author: claimedBy || 'Delegierte:r',
       };
 
-      currentSection.subAntraege.push(parsedSub);
+      subMotions.push(parsedSub);
 
-      // Debug-Logging gemäß Vorgabe:
       console.log(
         `[PARSED] Typ: ${parsedSub.type} | Titel: ${parsedSub.title} | Submitter: ${parsedSub.claimedBy || parsedSub.author || 'Delegierte:r'} | Textlänge: ${parsedSub.content.length} | Forderungen: 0`
       );
       continue;
     }
 
-    // 5. Wenn direkt zuvor "Forderungspunkt X:" stand, ist diese Zeile der Text des Forderungspunkts
-    if (expectingForderungspunktText && currentSection) {
-      if (!currentSection.forderungspunkte) {
-        currentSection.forderungspunkte = [];
-      }
-      currentSection.forderungspunkte.push(line);
-      expectingForderungspunktText = false;
-      continue;
-    }
-
-    // 6. Prüfe auf Strategie-Notizen / Metazeilen ("Strategie: ...", "Abstimmungsempfehlung: ...", etc.)
-    const isMetaLine =
-      /^(?:strategie|abstimmungsempfehlung|empfehlung|begründung|nebenantr[äa]ge|wortmeldung|redner|notizen?|anmerkung|taktik|hinweis|info|tipp|genereller ablauf|während dem sip|dresscode)\b/i.test(
-        line
-      );
-
-    if (isMetaLine && currentSection) {
-      justOpenedFromFileBanner = false;
-      const cleanedNote = line.replace(/^strategie\s*[:\-]\s*/i, '').trim();
-      if (cleanedNote) {
-        currentSection.notes = (currentSection.notes ? `${currentSection.notes}\n` : '') + cleanedNote;
-      }
-      continue;
-    }
-
-    // 7. Wenn gerade eine Datei über "--- Strategie: Dateiname ---" geöffnet wurde, ist die erste Zeile der echte Antragstitel im Dokument
-    if (justOpenedFromFileBanner && currentSection) {
-      justOpenedFromFileBanner = false;
-      if (line.length >= 3 && line.length <= 160 && !/^antragsteller/i.test(line)) {
-        currentSection.motionTitle = line.replace(/^#{1,4}\s+/, '').trim();
-      }
-      continue;
-    }
-
-    // 8. Prüfe, ob eine neue Antrags-Überschrift vorliegt (nur in Sammeldateien oder wenn keine Einzeldatei aktiv ist)
-    const nextNonEmptyLine = lines.slice(i + 1).find((l) => l.length > 0) || '';
-    const nextLineIsSubMotionOrAuthor =
-      !isSingleMotionFile &&
-      !/^(?:eventuelle|mögliche|allgemeine|weitere|zusätzliche|fragen|antworten|df\b|bidi\b)/i.test(line) &&
-      !line.includes('?') &&
-      !line.endsWith(':') &&
-      (SUB_MOTION_LINE_REGEX.test(nextNonEmptyLine) ||
-        /^(?:antragsteller|strategie\s*:|forderungspunkt\s*\d+)/i.test(nextNonEmptyLine));
-
-    const isHeaderCandidate =
-      !isSingleMotionFile &&
-      !isMetaLine &&
-      line.length >= 3 &&
-      line.length <= 140 &&
-      !line.startsWith('•') &&
-      !line.startsWith('-') &&
-      !line.startsWith('') &&
-      !line.startsWith('●') &&
-      (/^#{1,4}\s+/i.test(line) ||
-        /(?:strategie\s+(?:für|zu)\s+)?(?:haupt)?antrag\s*\d+/i.test(line) ||
-        /^top\s*\d+/i.test(line) ||
-        /^\d{1,2}[\.:]\s+[A-ZÄÖÜ]/i.test(line) ||
-        nextLineIsSubMotionOrAuthor);
-
-    if (isHeaderCandidate) {
-      hasFoundFirstMotion = true;
-      activeForderungspunkt = undefined;
-      expectingForderungspunktText = false;
-      const cleanHeader = line.replace(/^#{1,4}\s+/, '').trim();
-      const meta = parseSiPFileNameMeta(cleanHeader);
-      currentSection = {
-        motionNumber: meta.motionNumber,
-        motionTitle: meta.title || cleanHeader,
-        author: meta.author,
-        forderungspunkte: [],
-        subAntraege: [],
-        notes: '',
-      };
-      sections.push(currentSection);
-    } else if (!hasFoundFirstMotion) {
+    // Allgemeine Notizen am Dokumentanfang
+    if (!currentTargetMotionNumber && !currentTargetMotionTitle) {
       generalNotesLines.push(line);
-    } else if (currentSection && currentSection.subAntraege.length === 0 && !activeForderungspunkt) {
-      // Zusätzliche Strategie-Erläuterung im Kopfbereich der Strategiedatei
-      currentSection.notes = (currentSection.notes ? `${currentSection.notes}\n` : '') + line;
     }
   }
 
   return {
-    sections,
+    subMotions,
     generalStrategyNotes: generalNotesLines.join('\n').trim(),
   };
 }
 
 /**
- * Gruppiert zusammengehörige Strategie-Sektionen (z.B. aus Einzel-Strategiedatei + Sammel-Änderungsantragsdatei)
+ * Abwärtskompatible Wrapper-Funktion für parseStrategieText
  */
-function mergeMatchingStrategieSections(sections: ParsedStrategieSection[]): ParsedStrategieSection[] {
-  const merged: ParsedStrategieSection[] = [];
+export function parseStrategieText(rawText: string): {
+  sections: ParsedStrategieSection[];
+  generalStrategyNotes: string;
+} {
+  const { subMotions, generalStrategyNotes } = parseStrategieSubMotions(rawText);
+  const sections: ParsedStrategieSection[] = [];
+  const map = new Map<number | string, ParsedStrategieSection>();
 
-  for (const sec of sections) {
-    if (sec.motionTitle === 'Allgemeine Strategieanträge') {
-      merged.push(sec);
-      continue;
+  for (const sm of subMotions) {
+    const key = sm.targetMotionNumber ?? sm.targetMotionTitle ?? 'global';
+    let sec = map.get(key);
+    if (!sec) {
+      sec = {
+        motionNumber: sm.targetMotionNumber,
+        motionTitle: sm.targetMotionTitle || (sm.targetMotionNumber ? `Antrag ${sm.targetMotionNumber}` : 'Allgemeine Strategieanträge'),
+        subAntraege: [],
+      };
+      map.set(key, sec);
+      sections.push(sec);
     }
-
-    const existing = merged.find((m) => isTitleMatching(m.motionTitle, sec.motionTitle));
-    if (existing) {
-      if (!existing.motionNumber && sec.motionNumber) existing.motionNumber = sec.motionNumber;
-      if (!existing.author && sec.author) existing.author = sec.author;
-      if (
-        (!existing.forderungspunkte || existing.forderungspunkte.length === 0) &&
-        sec.forderungspunkte &&
-        sec.forderungspunkte.length > 0
-      ) {
-        existing.forderungspunkte = [...sec.forderungspunkte];
-      }
-      if (sec.notes) {
-        existing.notes = existing.notes ? `${existing.notes}\n${sec.notes}` : sec.notes;
-      }
-      // Füge neue Nebenanträge hinzu (vermeide exakte Duplikate)
-      for (const sub of sec.subAntraege) {
-        const isDup = existing.subAntraege.some(
-          (s) => s.type === sub.type && s.content === sub.content && s.claimedBy === sub.claimedBy
-        );
-        if (!isDup) {
-          existing.subAntraege.push(sub);
-        }
-      }
-    } else {
-      merged.push({
-        ...sec,
-        forderungspunkte: sec.forderungspunkte ? [...sec.forderungspunkte] : [],
-        subAntraege: [...sec.subAntraege],
-      });
-    }
+    sec.subAntraege.push({
+      type: sm.type,
+      title: sm.title,
+      content: sm.content,
+      lineOrParagraph: sm.lineOrParagraph,
+      author: sm.author,
+      claimedBy: sm.claimedBy,
+    });
   }
 
-  return merged;
+  return { sections, generalStrategyNotes };
 }
 
 /**
- * Kombiniert Hauptanträge aus der SiP-Antragsmappe und Nebenanträge aus der Strategie.
- * Antragstexte & Forderungspunkte werden mit den entsprechenden Strategien zusammengeführt.
+ * Kombiniert Hauptanträge aus der SiP-Antragsmappe und Zulieferungen aus der Strategie.
+ *
+ * PHASE 1: Das PDF (Antragsmappe) ist GOTT für den Hauptantrag!
+ * Daraus entstehen die VOLL FERTIGEN Hauptantrag-Objekte mit title, submitter, text und demands.
+ * Diese Objekte sind heilig. Ihre Kernfelder dürfen nie wieder im Code von einer anderen Funktion angerührt oder überschrieben werden!
+ *
+ * PHASE 2: Die DOCX (Strategie) ist reiner ZULIEFERER für Nebenanträge/Wortmeldungen.
+ * Der Parser für die Strategie-DOCX liest KEINEN Hauptantrag mehr aus.
+ * Aus der DOCX werden ausschließlich Nebenanträge und Wortmeldungen als Kind-Elemente angehängt.
  */
 export function combineAntragsmappeAndStrategie(
   antragsmappeText: string,
@@ -907,196 +817,99 @@ export function combineAntragsmappeAndStrategie(
     goExcluded: boolean;
   };
 } {
+  // =========================================================================
+  // PHASE 1: Das PDF (Antragsmappe) ist GOTT für den Hauptantrag
+  // =========================================================================
   const { hauptAntraege, goExcluded } = parseAntragsmappeText(antragsmappeText);
-  const { sections: rawSections, generalStrategyNotes } = parseStrategieText(strategieText);
-  const sections = mergeMatchingStrategieSections(rawSections);
 
-  const resultAntraege: SipAntrag[] = [];
-  const matchedSectionIndices = new Set<number>();
-
-  // 1. Verarbeite Hauptanträge aus der Antragsmappe und verknüpfe passende Strategie-Sektionen
-  // REGEL 1: Die PDF-Antragsmappe ist die Single Source of Truth für Hauptanträge!
-  // title, author, content (Begründung) und forderungspunkte (Forderungen) stammen strikt aus der PDF.
-  // REGEL 2: DOCX-Dateien werden dem jeweiligen Hauptantrag über die Antragsnummer zugeordnet (z. B. 1_...docx zu Antrag 1).
-  hauptAntraege.forEach((h, hIdx) => {
-    const hauptAntragId = `antrag_${hIdx + 1}`;
-    const motionNum = h.index || (hIdx + 1);
-
-    // Suche alle passenden Strategie-Sektionen:
-    // Priorität 1: Direkte Zuordnung über die Antragsnummer (z. B. 1_...docx zu Antrag 1)
-    const matchingIndices: number[] = [];
-    sections.forEach((s, sIdx) => {
-      if (s.motionNumber && s.motionNumber === motionNum) {
-        matchingIndices.push(sIdx);
-      }
-    });
-
-    // Priorität 2: Zuordnung über Titel-Übereinstimmung
-    sections.forEach((s, sIdx) => {
-      if (!matchingIndices.includes(sIdx) && isTitleMatching(s.motionTitle, h.cleanTitle)) {
-        matchingIndices.push(sIdx);
-      }
-    });
-
-    const matchedSections = matchingIndices.map((idx) => {
-      matchedSectionIndices.add(idx);
-      return sections[idx];
-    });
-
-    // Aus DOCX werden AUSSCHLIESSLICH ergänzende Daten extrahiert:
-    // Interne Strategie-Notizen und Nebenanträge/Wortmeldungen.
-    // NIEMALS wird der Begründungstext oder die Forderungsliste der PDF überschrieben!
-    const strategyNotesForMotion = matchedSections
-      .map((s) => s.notes)
-      .filter(Boolean)
-      .join('\n');
-
-    const mainMotion: SipAntrag = {
-      id: hauptAntragId,
-      type: 'HAUPTANTRAG',
+  // Voll fertige, unantastbare Hauptantrag-Objekte direkt aus der PDF Antragsmappe
+  const holyHauptAntraege: SipAntrag[] = hauptAntraege.map((h, hIdx) => {
+    return {
+      id: `antrag_${hIdx + 1}`,
+      type: 'HAUPTANTRAG' as const,
       orderIndex: hIdx, // Fortlaufender 0-basierter Index der parlamentarischen Reihenfolge (0, 1, 2...)
-      title: h.cleanTitle, // PDF Single Source of Truth
-      author: h.author || 'Schüler:innenparlament', // PDF Single Source of Truth
-      rede: h.content, // PDF Single Source of Truth (echter Begründungstext)
-      content: h.content, // PDF Single Source of Truth (echter Begründungstext)
-      forderungspunkte: h.forderungspunkte || [], // PDF Single Source of Truth
+      title: h.cleanTitle, // HEILIG: 100% aus PDF Antragsmappe
+      author: h.author || 'Schüler:innenparlament', // HEILIG: 100% aus PDF Antragsmappe
+      rede: h.content, // HEILIG: 100% aus PDF Antragsmappe (echter Begründungstext)
+      content: h.content, // HEILIG: 100% aus PDF Antragsmappe (echter Begründungstext)
+      forderungspunkte: h.forderungspunkte || [], // HEILIG: 100% aus PDF Antragsmappe (Forderungen)
       lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
-      adminNotes: strategyNotesForMotion || undefined,
       isPreFab: true,
-      status: 'approved',
+      status: 'approved' as const,
       claimedBy: null,
       claimedAt: null,
       isActive: false,
       createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
     };
-    resultAntraege.push(mainMotion);
-
-    let subCounter = 1;
-    for (const matchingSection of matchedSections) {
-      for (const sub of matchingSection.subAntraege) {
-        const subMotion: SipAntrag = {
-          id: `antrag_sub_${hIdx + 1}_${subCounter}`,
-          parentAntragId: hauptAntragId,
-          orderIndex: hIdx + subCounter / 1000, // Parlamentarische Reihung direkt beim jeweiligen Hauptantrag
-          type: sub.type,
-          // Titel bereinigen: keine Namen oder "(XX)" im Titel
-          title: cleanSubMotionTitle(sub.title),
-          content: sub.content,
-          lineOrParagraph: sub.lineOrParagraph || h.lineOrParagraph,
-          author: sub.author || 'Delegierte:r',
-          claimedBy: sub.claimedBy || null,
-          claimedAt: sub.claimedBy ? new Date().toISOString() : null,
-          isPreFab: true,
-          status: 'approved',
-          isActive: false,
-          createdAt: new Date(baseTimestamp + hIdx * 1000 + subCounter * 100).toISOString(),
-        };
-        resultAntraege.push(subMotion);
-        subCounter++;
-      }
-    }
   });
 
-  // 2. Behandle nicht-gematchte Strategie-Sektionen
-  // WICHTIG: Wenn Hauptanträge aus der PDF existieren, werden NIEMALS zusätzliche Dummy-Hauptanträge
-  // mit 'Antragstext siehe SiP-Antragsmappe' erstellt!
-  sections.forEach((sec, sIdx) => {
-    if (matchedSectionIndices.has(sIdx)) return;
+  // =========================================================================
+  // PHASE 2: Die DOCX (Strategie) ist reiner ZULIEFERER für Nebenanträge/Wortmeldungen
+  // =========================================================================
+  // Der Parser für die DOCX darf KEINEN Hauptantrag mehr auslesen.
+  // Ignoriere jeden Text im DOCX, der für den Hauptantrag gedacht wäre (wie z. B. 'Siehe SiP-Antragsmappe').
+  // Die DOCX-Dateien werden AUSSCHLIESSLICH nach Mustern für Nebenanträge und Wortmeldungen gescannt.
+  const { subMotions, generalStrategyNotes } = parseStrategieSubMotions(strategieText);
 
-    if (
-      sec.motionTitle === 'Allgemeine Strategieanträge' &&
-      (hauptAntraege.length > 0 || sections.length > 1)
-    ) {
-      return;
+  const finalSubAntraege: SipAntrag[] = [];
+  const subCounterPerParent: Record<string, number> = {};
+  let matchedCount = 0;
+
+  for (const sub of subMotions) {
+    // Finde den zugehörigen heiligen Hauptantrag aus Phase 1:
+    // Priorität 1: Über Antragsnummer (z. B. 1_...docx zu Antrag 1)
+    let parent = holyHauptAntraege.find((h, idx) => {
+      const motionNum = hauptAntraege[idx]?.index || (idx + 1);
+      return sub.targetMotionNumber && sub.targetMotionNumber === motionNum;
+    });
+
+    // Priorität 2: Über Titel-Match
+    if (!parent && sub.targetMotionTitle) {
+      parent = holyHauptAntraege.find((h) =>
+        isTitleMatching(sub.targetMotionTitle!, h.title)
+      );
     }
 
-    if (hauptAntraege.length > 0) {
-      // PDF existiert: Versuche verbleibende Nebenanträge zuzuordnen oder notiere als Strategiehinweis
-      if (sec.motionNumber && sec.motionNumber <= hauptAntraege.length) {
-        const parentId = `antrag_${sec.motionNumber}`;
-        const parentIndex = sec.motionNumber - 1;
-        sec.subAntraege.forEach((sub, subIdx) => {
-          resultAntraege.push({
-            id: `antrag_sub_${sec.motionNumber}_extra_${subIdx + 1}`,
-            parentAntragId: parentId,
-            orderIndex: parentIndex + (50 + subIdx) / 1000,
-            type: sub.type,
-            title: cleanSubMotionTitle(sub.title),
-            content: sub.content,
-            lineOrParagraph: sub.lineOrParagraph || `Antrag ${sec.motionNumber}`,
-            author: sub.author || 'Delegierte:r',
-            claimedBy: sub.claimedBy || null,
-            claimedAt: sub.claimedBy ? new Date().toISOString() : null,
-            isPreFab: true,
-            status: 'approved',
-            isActive: false,
-            createdAt: new Date(baseTimestamp + parentIndex * 1000 + (subIdx + 1) * 100).toISOString(),
-          });
-        });
-      }
-    } else {
-      // Fallback NUR wenn überhaupt keine PDF-Antragsmappe vorhanden war (z.B. Offline-DOCX-Test)
-      const hasContent =
-        sec.subAntraege.length > 0 ||
-        (sec.forderungspunkte && sec.forderungspunkte.length > 0) ||
-        Boolean(sec.notes);
-
-      if (hasContent) {
-        const motionNum = sec.motionNumber || (sIdx + 1);
-        const extraHauptId = `antrag_extra_${sIdx + 1}`;
-        const cleanSecTitle = sec.motionTitle.replace(/^Antrag\s*\d+\s*[:.\-]\s*/i, '').trim();
-        const formattedTitle = /^antrag\s*\d+/i.test(sec.motionTitle)
-          ? sec.motionTitle
-          : `Antrag ${motionNum}: ${cleanSecTitle}`;
-
-        const extraMain: SipAntrag = {
-          id: extraHauptId,
-          type: 'HAUPTANTRAG',
-          orderIndex: sIdx,
-          title: formattedTitle,
-          author: sec.author || 'Schüler:innenparlament',
-          rede: sec.notes || '',
-          content: sec.notes || '',
-          forderungspunkte: sec.forderungspunkte || [],
-          lineOrParagraph: `Antrag ${motionNum}`,
-          isPreFab: true,
-          status: 'approved',
-          claimedBy: null,
-          claimedAt: null,
-          isActive: false,
-          createdAt: new Date(baseTimestamp + sIdx * 1000).toISOString(),
-        };
-        resultAntraege.push(extraMain);
-
-        sec.subAntraege.forEach((sub, subIdx) => {
-          resultAntraege.push({
-            id: `antrag_sub_extra_${sIdx + 1}_${subIdx + 1}`,
-            parentAntragId: extraHauptId,
-            orderIndex: sIdx + (subIdx + 1) / 1000,
-            type: sub.type,
-            title: cleanSubMotionTitle(sub.title),
-            content: sub.content,
-            lineOrParagraph: sub.lineOrParagraph || `Antrag ${motionNum}`,
-            author: sub.author || 'Delegierte:r',
-            claimedBy: sub.claimedBy || null,
-            claimedAt: sub.claimedBy ? new Date().toISOString() : null,
-            isPreFab: true,
-            status: 'approved',
-            isActive: false,
-            createdAt: new Date(
-              baseTimestamp + sIdx * 1000 + (subIdx + 1) * 100
-            ).toISOString(),
-          });
-        });
-      }
+    if (parent) {
+      matchedCount++;
+    } else if (holyHauptAntraege.length > 0) {
+      parent = holyHauptAntraege[0];
     }
-  });
+
+    const parentId = parent?.id;
+    const parentOrderIndex = parent?.orderIndex ?? 0;
+    const parentKey = parentId || 'global';
+    const subIdx = (subCounterPerParent[parentKey] || 0) + 1;
+    subCounterPerParent[parentKey] = subIdx;
+
+    const subMotion: SipAntrag = {
+      id: parentId ? `${parentId}_sub_${subIdx}` : `antrag_sub_${subIdx}`,
+      parentAntragId: parentId,
+      orderIndex: parentOrderIndex + subIdx / 1000, // Direkt hinter dem zugehörigen Hauptantrag eingereiht
+      type: sub.type,
+      title: cleanSubMotionTitle(sub.title),
+      content: sub.content,
+      lineOrParagraph: sub.lineOrParagraph || parent?.lineOrParagraph,
+      author: sub.author || 'Delegierte:r',
+      claimedBy: sub.claimedBy || null,
+      claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+      isPreFab: true,
+      status: 'approved' as const,
+      isActive: false,
+      createdAt: new Date(baseTimestamp + parentOrderIndex * 1000 + subIdx * 100).toISOString(),
+    };
+    finalSubAntraege.push(subMotion);
+  }
+
+  // Anträge zusammenführen: Die heiligen Hauptanträge + die reinen Subanträge
+  // ES GIBT KEINEN CODE, DER EINEN HAUPTANTRAG AUS DER DOCX ERSTELLT ODER EINES SEINER FELDER ANFASST!
+  const resultAntraege: SipAntrag[] = [...holyHauptAntraege, ...finalSubAntraege];
 
   // Strikte parlamentarische Reihenfolge: Sortierung nach orderIndex aufsteigend
   resultAntraege.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
-  const subCount = resultAntraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
-  const hauptCount = resultAntraege.filter((a) => a.type === 'HAUPTANTRAG').length;
+  const subCount = finalSubAntraege.length;
+  const hauptCount = holyHauptAntraege.length;
 
   return {
     antraege: resultAntraege,
@@ -1104,7 +917,7 @@ export function combineAntragsmappeAndStrategie(
     summary: {
       hauptAntraegeCount: hauptCount,
       subAntraegeCount: subCount,
-      matchedSectionsCount: matchedSectionIndices.size,
+      matchedSectionsCount: matchedCount,
       goExcluded,
     },
   };

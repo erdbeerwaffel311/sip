@@ -13,8 +13,18 @@ import {
 } from 'lucide-react';
 import { SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
-import { AutoImportResult, AutoImportProgress, parseAntragsmappeText } from '../utils/sipAutoImporter';
-import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
+import {
+  AutoImportResult,
+  AutoImportProgress,
+  parseAntragsmappeText,
+  createHauptantraegeFromParsed,
+  mergeHauptAndNebenantraege,
+} from '../utils/sipAutoImporter';
+import {
+  executeOnlineDriveImport,
+  downloadAndParseDriveStrategieFiles,
+  GoogleDriveFolderManifest,
+} from '../utils/driveFolderCrawler';
 import { extractTextFromPdfArrayBuffer } from '../utils/pdfHelper';
 
 interface MotionParserModalProps {
@@ -30,11 +40,14 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 }) => {
   const [activeMode, setActiveMode] = useState<'online_drive' | 'raw_text'>('online_drive');
 
-  // Online Drive Mode
+  // Online Drive Mode – Getrennte States für PDF-Hauptanträge und DOCX-Nebenanträge
   const [driveUrlInput, setDriveUrlInput] = useState(initialDriveUrl);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
+  const [pendingHauptantraege, setPendingHauptantraege] = useState<SipAntrag[]>([]);
+  const [pendingNebenantraege, setPendingNebenantraege] = useState<SipAntrag[]>([]);
+  const [pendingStrategyNotes, setPendingStrategyNotes] = useState<string>('');
   const [manualUploadRequired, setManualUploadRequired] = useState(false);
   const [pendingManifest, setPendingManifest] = useState<GoogleDriveFolderManifest | null>(null);
   const [manualUploadFileName, setManualUploadFileName] = useState<string>('');
@@ -53,6 +66,9 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     setIsProcessing(true);
     setManualUploadRequired(false);
     setPendingManifest(null);
+    setPendingHauptantraege([]);
+    setPendingNebenantraege([]);
+    setPendingStrategyNotes('');
     setImportProgress({ percent: 5, statusText: 'Verbinde mit Google Drive...' });
     setAutoResult(null);
 
@@ -61,7 +77,32 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
         folderUrlOrId: driveUrlInput.trim(),
         onProgress: (p) => setImportProgress(p),
       });
-      setAutoResult(res);
+
+      const hauptantraege =
+        res.hauptantraege || res.antraege.filter((a) => a.type === 'HAUPTANTRAG');
+      const nebenantraege =
+        res.nebenantraege || res.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+
+      setPendingHauptantraege(hauptantraege);
+      setPendingNebenantraege(nebenantraege);
+      setPendingStrategyNotes(res.strategyNotes || '');
+
+      const finalMotions = [...hauptantraege, ...nebenantraege];
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+
+      setAutoResult({
+        ...res,
+        antraege: finalMotions,
+        hauptantraege,
+        nebenantraege,
+      });
       setManualUploadRequired(false);
       setPendingManifest(null);
     } catch (err: any) {
@@ -74,6 +115,12 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
         setManualUploadRequired(true);
         if (err.manifest) {
           setPendingManifest(err.manifest);
+        }
+        if (Array.isArray(err.pendingNebenantraege) && err.pendingNebenantraege.length > 0) {
+          setPendingNebenantraege(err.pendingNebenantraege);
+        }
+        if (err.strategyNotes) {
+          setPendingStrategyNotes(err.strategyNotes);
         }
         if (err.file?.name) {
           setManualUploadFileName(err.file.name);
@@ -94,74 +141,94 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     setImportProgress({ percent: 15, statusText: `Lese manuell hochgeladene Datei ${file.name} ein...` });
 
     try {
-      // 1. Wandle in ArrayBuffer um und nutze denselben PDF-Parser (parseAntragsmappeText)
+      // 1. Manuelle PDF parsen und in pendingHauptantraege speichern
       const arrayBuffer = await file.arrayBuffer();
       const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer.slice(0));
-      const { hauptAntraege } = parseAntragsmappeText(pdfText);
-      const hauptantraege = hauptAntraege;
+      const { hauptAntraege, goExcluded } = parseAntragsmappeText(pdfText);
+      const parsedHauptantraege = createHauptantraegeFromParsed(hauptAntraege);
 
-      // 4. Gefordertes Logging
-      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
+      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', parsedHauptantraege.length);
+      setPendingHauptantraege(parsedHauptantraege);
 
-      const baseTimestamp = Date.now();
-      const hauptantraegeAusPDF: SipAntrag[] = hauptantraege.map((h, hIdx) => ({
-        id: `antrag_${hIdx + 1}`,
-        type: 'HAUPTANTRAG' as const,
-        orderIndex: hIdx,
-        title: h.cleanTitle,
-        author: h.author || 'Schüler:innenparlament',
-        rede: h.content,
-        content: h.content,
-        forderungspunkte: h.forderungspunkte || [],
-        lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
-        isPreFab: true,
-        status: 'approved' as const,
-        claimedBy: null,
-        claimedAt: null,
-        isActive: false,
-        createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
-      }));
+      // 2. Sicherstellen, dass die DOCX-Nebenanträge (pendingNebenantraege) ebenfalls vorliegen
+      let currentNebenantraege = pendingNebenantraege;
+      let currentStrategyNotes = pendingStrategyNotes;
+      let strategyFilesCount = pendingManifest?.strategieFiles.length || 0;
 
-      // Lade die DOCX-Strategiedateien aus dem Google Drive Ordner herunter und parse deren Nebenanträge
-      setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
-      const importResult = await executeOnlineDriveImport({
-        folderUrlOrId: driveUrlInput.trim(),
-        manualPdfBuffer: arrayBuffer.slice(0),
-        cachedManifest: pendingManifest || undefined,
-        onProgress: (p) => setImportProgress(p),
-      });
+      if (currentNebenantraege.length === 0 && pendingManifest && pendingManifest.strategieFiles.length > 0) {
+        setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+        const stratRes = await downloadAndParseDriveStrategieFiles(
+          pendingManifest,
+          (p) => setImportProgress(p),
+          45,
+          35
+        );
+        currentNebenantraege = stratRes.nebenantraege;
+        currentStrategyNotes = stratRes.strategyNotes;
+        setPendingNebenantraege(currentNebenantraege);
+        setPendingStrategyNotes(currentStrategyNotes);
+      } else if (currentNebenantraege.length === 0 && driveUrlInput.trim()) {
+        setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+        const importResult = await executeOnlineDriveImport({
+          folderUrlOrId: driveUrlInput.trim(),
+          manualPdfBuffer: arrayBuffer.slice(0),
+          cachedManifest: pendingManifest || undefined,
+          onProgress: (p) => setImportProgress(p),
+        });
+        currentNebenantraege =
+          importResult.nebenantraege || importResult.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+        currentStrategyNotes = importResult.strategyNotes || '';
+        strategyFilesCount = importResult.summary.strategyFilesCount;
+        setPendingNebenantraege(currentNebenantraege);
+        setPendingStrategyNotes(currentStrategyNotes);
+      }
 
-      // Nebenanträge/Wortmeldungen aus den DOCX-Dateien
-      const nebenantraegeAusDOCX = importResult.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
-
-      // 2. Strikter Merge der Arrays
-      const allMotions = [...hauptantraegeAusPDF, ...nebenantraegeAusDOCX];
-      allMotions.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+      // 3. Expliziter Merge-Schritt der getrennten States (pendingHauptantraege + pendingNebenantraege)
+      const merged = mergeHauptAndNebenantraege(parsedHauptantraege, currentNebenantraege);
+      const hauptantraege = merged.hauptantraege;
+      const nebenantraege = merged.nebenantraege;
+      const finalMotions = [...hauptantraege, ...nebenantraege];
 
       console.log(
-        `[FINAL-MERGE] Gesamt: ${allMotions.length} Anträge (${hauptantraegeAusPDF.length} Hauptanträge, ${nebenantraegeAusDOCX.length} Nebenanträge)`
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
       );
 
+      setPendingHauptantraege(hauptantraege);
+      setPendingNebenantraege(nebenantraege);
+
       const finalResult: AutoImportResult = {
-        success: allMotions.length > 0,
+        success: finalMotions.length > 0,
         message: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
-        antraege: allMotions,
+        antraege: finalMotions,
+        hauptantraege,
+        nebenantraege,
         summary: {
-          hauptAntraegeCount: hauptantraegeAusPDF.length,
-          subAntraegeCount: nebenantraegeAusDOCX.length,
-          matchedSectionsCount: importResult.summary.matchedSectionsCount,
-          goExcluded: importResult.summary.goExcluded,
-          strategyFilesCount: importResult.summary.strategyFilesCount,
+          hauptAntraegeCount: hauptantraege.length,
+          subAntraegeCount: nebenantraege.length,
+          matchedSectionsCount: merged.matchedSectionsCount,
+          goExcluded,
+          strategyFilesCount,
         },
-        strategyNotes: importResult.strategyNotes,
+        strategyNotes: currentStrategyNotes,
       };
 
+      setImportProgress({
+        percent: 100,
+        currentMotionNumber: hauptantraege.length,
+        totalMotions: hauptantraege.length,
+        statusText: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
+      });
       setAutoResult(finalResult);
       setManualUploadRequired(false);
       setPendingManifest(null);
 
-      // 3. State aktualisieren: Gemeinsames Array an den State / Supabase übergeben
-      onImport(allMotions, finalResult.strategyNotes);
+      // 4. Erst dieses vereinte finalMotions-Array an Supabase / den Haupt-State der App übergeben
+      onImport(finalMotions, finalResult.strategyNotes);
     } catch (err: any) {
       console.error('Fehler nach manuellem PDF-Upload:', err);
       alert('Fehler beim Verarbeiten der hochgeladenen PDF-Datei: ' + (err?.message || err));
@@ -185,8 +252,28 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 
   function handleCommitImport() {
     if (activeMode === 'online_drive') {
-      if (!autoResult || autoResult.antraege.length === 0) return;
-      onImport(autoResult.antraege, autoResult.strategyNotes);
+      const hauptantraege =
+        pendingHauptantraege.length > 0
+          ? pendingHauptantraege
+          : (autoResult?.antraege || []).filter((a) => a.type === 'HAUPTANTRAG');
+      const nebenantraege =
+        pendingNebenantraege.length > 0
+          ? pendingNebenantraege
+          : (autoResult?.antraege || []).filter((a) => a.type !== 'HAUPTANTRAG');
+
+      const finalMotions = [...hauptantraege, ...nebenantraege];
+      if (finalMotions.length === 0) return;
+
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+
+      onImport(finalMotions, autoResult?.strategyNotes || pendingStrategyNotes);
       onClose();
     } else {
       const selected = parsedItems.filter((i) => i.selected);

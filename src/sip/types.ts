@@ -25,10 +25,13 @@ export interface SipAntrag {
   type: AntragType;
   title: string;
   content: string;
+  text?: string; // Vollständiger mehrzeiliger Antragstext / Wortmeldungstext
   orderIndex?: number; // Parlamentarische Reihenfolge (basierend auf der PDF-Antragsmappe)
   rede?: string; // Vorbereitete Rede aus den SiP-Unterlagen
   forderungspunkte?: string[]; // Konkrete Forderungspunkte des Antrags
   lineOrParagraph?: string; // z.B. "Antrag 1" oder "Zeile 45-48"
+  targetMotionNumber?: number; // Ziel-Hauptantragsnummer aus Strategie-DOCX
+  targetMotionTitle?: string; // Ziel-Hauptantragstitel aus Strategie-DOCX
   author: string;
   isPreFab: boolean; // Vorgefertigt aus Dokument vs. selbst eingereicht
   status: 'pending_approval' | 'approved' | 'rejected' | 'completed';

@@ -101,12 +101,17 @@ class SipRealtimeService {
       activeId = activeId.replace('antrag_top_', 'antrag_');
     }
 
-    // Wenn es sich um eine archivierte oder neu gestartete Sitzung handelt (nicht die Ur-Vorlage sip_current_session):
+    // Wenn es sich um eine archivierte, neu gestartete oder mit importierten Anträgen befüllte Sitzung handelt:
     // Keine alten Vorlage-Anträge oder alten Memes hineinmischen, sondern exakt die Session-Daten verwenden!
-    const isOriginalTemplate = session.id === 'sip_current_session';
-    if (!isOriginalTemplate && session.id) {
+    const hasImportedMotions =
+      Array.isArray(session.antraege) &&
+      session.antraege.length > 0 &&
+      (session.antraege.length !== DEFAULT_SIP_SESSION.antraege.length ||
+        session.antraege[0]?.title !== DEFAULT_SIP_SESSION.antraege[0]?.title);
+    const isOriginalTemplate = session.id === 'sip_current_session' && !hasImportedMotions;
+    if ((!isOriginalTemplate && session.id) || hasImportedMotions) {
       return {
-        id: session.id,
+        id: session.id || `session_${Date.now()}`,
         title: session.title || 'Schüler:innenparlament (SiP)',
         strategyNotes: session.strategyNotes ?? '',
         driveFolderUrl: session.driveFolderUrl ?? '',
@@ -1152,14 +1157,37 @@ class SipRealtimeService {
     settings?: AppSettings
   ): Promise<void> {
     this.lastLocalMutationAt = Date.now();
-    const hauptCount = antraege.filter((a) => a.type === 'HAUPTANTRAG').length;
-    const subCount = antraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
+    const hauptantraege = antraege.filter((a) => a.type === 'HAUPTANTRAG');
+    const nebenantraege = antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+    const hauptCount = hauptantraege.length;
+    const subCount = nebenantraege.length;
+
+    // Wenn ein kompletter Satz (mit Hauptanträgen) importiert wird, ersetze vorherige PreFab-Anträge sauber durch finalMotions
+    const finalMotions =
+      hauptCount > 0
+        ? [...hauptantraege, ...nebenantraege]
+        : [...this.currentSession.antraege, ...antraege];
+
+    if (hauptCount > 0) {
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+    }
 
     this.currentSession = {
       ...this.currentSession,
-      antraege: [...this.currentSession.antraege, ...antraege],
+      id:
+        this.currentSession.id === 'sip_current_session'
+          ? `session_${Date.now()}`
+          : this.currentSession.id,
+      antraege: finalMotions,
       strategyNotes: strategyNotes
-        ? this.currentSession.strategyNotes
+        ? this.currentSession.strategyNotes && hauptCount === 0
           ? `${this.currentSession.strategyNotes}\n\n${strategyNotes}`
           : strategyNotes
         : this.currentSession.strategyNotes,
@@ -1207,12 +1235,39 @@ class SipRealtimeService {
    * Batch-Import von vorgefertigten Anträgen aus Dokument
    */
   public importAntraege(newAntraege: SipAntrag[], settings?: AppSettings) {
+    this.lastLocalMutationAt = Date.now();
+    const hauptantraege = newAntraege.filter((a) => a.type === 'HAUPTANTRAG');
+    const nebenantraege = newAntraege.filter((a) => a.type !== 'HAUPTANTRAG');
+
+    const finalMotions =
+      hauptantraege.length > 0
+        ? [...hauptantraege, ...nebenantraege]
+        : [...newAntraege, ...this.currentSession.antraege];
+
+    if (hauptantraege.length > 0) {
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+    }
+
     this.currentSession = {
       ...this.currentSession,
-      antraege: [...newAntraege, ...this.currentSession.antraege],
+      id:
+        this.currentSession.id === 'sip_current_session'
+          ? `session_${Date.now()}`
+          : this.currentSession.id,
+      antraege: finalMotions,
       updatedAt: new Date().toISOString(),
     };
+    this.saveToStorage();
     this.notify();
+
+    this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession).catch(() => {});
 
     const msg: SipRealtimeMessage = {
       type: 'STATE_SYNC',

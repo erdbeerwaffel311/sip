@@ -628,11 +628,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   }
 
   function handleImportAntraege(imported: SipAntrag[], strategyNotes?: string) {
-    if (strategyNotes && strategyNotes.trim()) {
-      sipRealtime.importCombinedAntraegeAndStrategy(imported, strategyNotes, settings);
-    } else {
-      sipRealtime.importAntraege(imported, settings);
-    }
+    sipRealtime.importCombinedAntraegeAndStrategy(imported, strategyNotes, settings);
   }
 
   function handleUpdateStrategyNotes(notes: string) {

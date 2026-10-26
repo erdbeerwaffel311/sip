@@ -25,8 +25,18 @@ import {
   deleteArchivedSession,
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
-import { AutoImportResult, AutoImportProgress, parseAntragsmappeText } from '../utils/sipAutoImporter';
-import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
+import {
+  AutoImportResult,
+  AutoImportProgress,
+  parseAntragsmappeText,
+  createHauptantraegeFromParsed,
+  mergeHauptAndNebenantraege,
+} from '../utils/sipAutoImporter';
+import {
+  executeOnlineDriveImport,
+  downloadAndParseDriveStrategieFiles,
+  GoogleDriveFolderManifest,
+} from '../utils/driveFolderCrawler';
 import { extractTextFromPdfArrayBuffer } from '../utils/pdfHelper';
 
 /**
@@ -92,6 +102,9 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
+  const [pendingHauptantraege, setPendingHauptantraege] = useState<SipAntrag[]>([]);
+  const [pendingNebenantraege, setPendingNebenantraege] = useState<SipAntrag[]>([]);
+  const [pendingStrategyNotes, setPendingStrategyNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [manualUploadRequired, setManualUploadRequired] = useState(false);
   const [pendingManifest, setPendingManifest] = useState<GoogleDriveFolderManifest | null>(null);
@@ -163,6 +176,9 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     setIsProcessingFiles(true);
     setManualUploadRequired(false);
     setPendingManifest(null);
+    setPendingHauptantraege([]);
+    setPendingNebenantraege([]);
+    setPendingStrategyNotes('');
     setImportProgress({ percent: 5, statusText: 'Verbinde mit Google Drive Ordner...' });
     setImportResult(null);
 
@@ -171,7 +187,32 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
         folderUrlOrId: urlToUse,
         onProgress: (p) => setImportProgress(p),
       });
-      setImportResult(res);
+
+      const hauptantraege =
+        res.hauptantraege || res.antraege.filter((a) => a.type === 'HAUPTANTRAG');
+      const nebenantraege =
+        res.nebenantraege || res.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+
+      setPendingHauptantraege(hauptantraege);
+      setPendingNebenantraege(nebenantraege);
+      setPendingStrategyNotes(res.strategyNotes || '');
+
+      const finalMotions = [...hauptantraege, ...nebenantraege];
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+
+      setImportResult({
+        ...res,
+        antraege: finalMotions,
+        hauptantraege,
+        nebenantraege,
+      });
       setManualUploadRequired(false);
       setPendingManifest(null);
     } catch (err: any) {
@@ -184,6 +225,12 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
         setManualUploadRequired(true);
         if (err.manifest) {
           setPendingManifest(err.manifest);
+        }
+        if (Array.isArray(err.pendingNebenantraege) && err.pendingNebenantraege.length > 0) {
+          setPendingNebenantraege(err.pendingNebenantraege);
+        }
+        if (err.strategyNotes) {
+          setPendingStrategyNotes(err.strategyNotes);
         }
         if (err.file?.name) {
           setManualUploadFileName(err.file.name);
@@ -204,68 +251,88 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     setImportProgress({ percent: 15, statusText: `Lese manuell hochgeladene Datei ${file.name} ein...` });
 
     try {
-      // 1. Wandle in ArrayBuffer um und nutze denselben PDF-Parser (parseAntragsmappeText)
+      // 1. Manuelle PDF parsen und in pendingHauptantraege speichern
       const arrayBuffer = await file.arrayBuffer();
       const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer.slice(0));
-      const { hauptAntraege } = parseAntragsmappeText(pdfText);
-      const hauptantraege = hauptAntraege;
+      const { hauptAntraege, goExcluded } = parseAntragsmappeText(pdfText);
+      const parsedHauptantraege = createHauptantraegeFromParsed(hauptAntraege);
 
-      // 4. Gefordertes Logging
-      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
+      console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', parsedHauptantraege.length);
+      setPendingHauptantraege(parsedHauptantraege);
 
-      const baseTimestamp = Date.now();
-      const hauptantraegeAusPDF: SipAntrag[] = hauptantraege.map((h, hIdx) => ({
-        id: `antrag_${hIdx + 1}`,
-        type: 'HAUPTANTRAG' as const,
-        orderIndex: hIdx,
-        title: h.cleanTitle,
-        author: h.author || 'Schüler:innenparlament',
-        rede: h.content,
-        content: h.content,
-        forderungspunkte: h.forderungspunkte || [],
-        lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
-        isPreFab: true,
-        status: 'approved' as const,
-        claimedBy: null,
-        claimedAt: null,
-        isActive: false,
-        createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
-      }));
+      // 2. Sicherstellen, dass die DOCX-Nebenanträge (pendingNebenantraege) ebenfalls vorliegen
+      let currentNebenantraege = pendingNebenantraege;
+      let currentStrategyNotes = pendingStrategyNotes;
+      let strategyFilesCount = pendingManifest?.strategieFiles.length || 0;
 
-      // Lade die DOCX-Strategiedateien aus dem Google Drive Ordner herunter und parse deren Nebenanträge
-      setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
-      const importResult = await executeOnlineDriveImport({
-        folderUrlOrId: newDriveFolderUrl.trim(),
-        manualPdfBuffer: arrayBuffer.slice(0),
-        cachedManifest: pendingManifest || undefined,
-        onProgress: (p) => setImportProgress(p),
-      });
+      if (currentNebenantraege.length === 0 && pendingManifest && pendingManifest.strategieFiles.length > 0) {
+        setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+        const stratRes = await downloadAndParseDriveStrategieFiles(
+          pendingManifest,
+          (p) => setImportProgress(p),
+          45,
+          35
+        );
+        currentNebenantraege = stratRes.nebenantraege;
+        currentStrategyNotes = stratRes.strategyNotes;
+        setPendingNebenantraege(currentNebenantraege);
+        setPendingStrategyNotes(currentStrategyNotes);
+      } else if (currentNebenantraege.length === 0 && newDriveFolderUrl.trim()) {
+        setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
+        const driveRes = await executeOnlineDriveImport({
+          folderUrlOrId: newDriveFolderUrl.trim(),
+          manualPdfBuffer: arrayBuffer.slice(0),
+          cachedManifest: pendingManifest || undefined,
+          onProgress: (p) => setImportProgress(p),
+        });
+        currentNebenantraege =
+          driveRes.nebenantraege || driveRes.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+        currentStrategyNotes = driveRes.strategyNotes || '';
+        strategyFilesCount = driveRes.summary.strategyFilesCount;
+        setPendingNebenantraege(currentNebenantraege);
+        setPendingStrategyNotes(currentStrategyNotes);
+      }
 
-      // Nebenanträge/Wortmeldungen aus den DOCX-Dateien
-      const nebenantraegeAusDOCX = importResult.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
-
-      // 2. Strikter Merge der Arrays
-      const allMotions = [...hauptantraegeAusPDF, ...nebenantraegeAusDOCX];
-      allMotions.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+      // 3. Expliziter Merge-Schritt der getrennten States (pendingHauptantraege + pendingNebenantraege)
+      const merged = mergeHauptAndNebenantraege(parsedHauptantraege, currentNebenantraege);
+      const hauptantraege = merged.hauptantraege;
+      const nebenantraege = merged.nebenantraege;
+      const finalMotions = [...hauptantraege, ...nebenantraege];
 
       console.log(
-        `[FINAL-MERGE] Gesamt: ${allMotions.length} Anträge (${hauptantraegeAusPDF.length} Hauptanträge, ${nebenantraegeAusDOCX.length} Nebenanträge)`
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
       );
 
+      setPendingHauptantraege(hauptantraege);
+      setPendingNebenantraege(nebenantraege);
+
       const finalResult: AutoImportResult = {
-        success: allMotions.length > 0,
+        success: finalMotions.length > 0,
         message: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
-        antraege: allMotions,
+        antraege: finalMotions,
+        hauptantraege,
+        nebenantraege,
         summary: {
-          hauptAntraegeCount: hauptantraegeAusPDF.length,
-          subAntraegeCount: nebenantraegeAusDOCX.length,
-          matchedSectionsCount: importResult.summary.matchedSectionsCount,
-          goExcluded: importResult.summary.goExcluded,
-          strategyFilesCount: importResult.summary.strategyFilesCount,
+          hauptAntraegeCount: hauptantraege.length,
+          subAntraegeCount: nebenantraege.length,
+          matchedSectionsCount: merged.matchedSectionsCount,
+          goExcluded,
+          strategyFilesCount,
         },
-        strategyNotes: importResult.strategyNotes,
+        strategyNotes: currentStrategyNotes,
       };
 
+      setImportProgress({
+        percent: 100,
+        currentMotionNumber: hauptantraege.length,
+        totalMotions: hauptantraege.length,
+        statusText: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
+      });
       setImportResult(finalResult);
       setManualUploadRequired(false);
       setPendingManifest(null);
@@ -290,7 +357,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
       let finalImportResult = importResult;
 
       // Falls noch nicht auf "Aus Drive laden" geklickt wurde, aber ein Drive-Link eingegeben ist:
-      if (!finalImportResult && newDriveFolderUrl.trim()) {
+      if (!finalImportResult && newDriveFolderUrl.trim() && pendingHauptantraege.length === 0) {
         try {
           setIsProcessingFiles(true);
           finalImportResult = await executeOnlineDriveImport({
@@ -305,18 +372,40 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
         }
       }
 
+      const hauptantraege =
+        pendingHauptantraege.length > 0
+          ? pendingHauptantraege
+          : (finalImportResult?.antraege || []).filter((a) => a.type === 'HAUPTANTRAG');
+      const nebenantraege =
+        pendingNebenantraege.length > 0
+          ? pendingNebenantraege
+          : (finalImportResult?.antraege || []).filter((a) => a.type !== 'HAUPTANTRAG');
+
+      const finalMotions = [...hauptantraege, ...nebenantraege];
+      console.log(
+        'FINAL MERGE: Hauptanträge:',
+        hauptantraege.length,
+        'Nebenanträge:',
+        nebenantraege.length,
+        'Gesamt:',
+        finalMotions.length
+      );
+
       await onStartNewSession({
         title: newSessionTitle.trim(),
         driveFolderUrl: newDriveFolderUrl.trim(),
         skipArchive: isCurrentSessionAlreadyArchived,
-        antraege: finalImportResult?.antraege || [],
-        strategyNotes: finalImportResult?.strategyNotes || '',
+        antraege: finalMotions,
+        strategyNotes: finalImportResult?.strategyNotes || pendingStrategyNotes || '',
       });
       setShowNewSessionModal(false);
       setNewSessionTitle('');
       setNewDriveFolderUrl('');
       const importedMsg = finalImportResult ? `\n\n${finalImportResult.message}` : '';
       setImportResult(null);
+      setPendingHauptantraege([]);
+      setPendingNebenantraege([]);
+      setPendingStrategyNotes('');
       setImportProgress(null);
       await loadArchives();
       alert(

@@ -5,116 +5,126 @@ export interface ParsedRawAntrag {
   type: AntragType;
   title: string;
   content: string;
+  text: string;
   lineOrParagraph?: string;
   confidence: 'high' | 'medium';
   selected: boolean;
 }
 
 /**
- * Analysiert Fließtext aus Google Docs / SiP-Antragsunterlagen
+ * Analysiert Fließtext aus Google Docs / SiP-Antragsunterlagen nach dem Buffer-Pattern
  * und erkennt automatisch Wortmeldungen (WM), Abänderungsanträge (ÄA),
  * Erweiterungsanträge (EA), Streichungsanträge (SA) sowie GO-Anträge.
+ * Jede darauffolgende Zeile, die kein neuer Antrag ist, wird mit `\n` an `text` angehängt.
  */
 export function parseAntraegeFromText(rawText: string): ParsedRawAntrag[] {
   if (!rawText || !rawText.trim()) return [];
 
   const results: ParsedRawAntrag[] = [];
-  // Splitte nach doppelten Zeilenumbrüchen oder nummerierten Abschnitten
-  const blocks = rawText.split(/(?:\r?\n){2,}|(?=^(?:\[?(?:WM|AÄA|ÄA|EA|SA|Antrag)\]?|\d+[\.\)]\s*(?:WM|AÄA|ÄA|EA|SA)))/gmi);
+  const lines = rawText.normalize('NFC').split(/\r?\n/);
 
   let counter = 1;
+  let activeBuffer: ParsedRawAntrag | null = null;
 
-  for (const block of blocks) {
-    const trimmed = block.trim();
-    if (!trimmed || trimmed.length < 5) continue;
-
+  const detectHeaderType = (line: string): { type: AntragType; confidence: 'high' | 'medium' } | null => {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
     const lower = trimmed.toLowerCase();
-    let detectedType: AntragType | null = null;
-    let confidence: 'high' | 'medium' = 'medium';
 
     if (
-      lower.includes('ende der debatte') ||
-      lower.includes('schluss der debatte') ||
-      lower.includes('debatte beenden')
+      /^(?:ende\s+der\s+debatte|schluss\s+der\s+debatte|debatte\s+beenden)\b/i.test(trimmed)
     ) {
-      detectedType = 'ENDE_DEBATTE';
-      confidence = 'high';
-    } else if (
-      lower.includes('ende der redner') ||
-      lower.includes('schluss der redner') ||
-      lower.includes('rednerliste schließen') ||
-      lower.includes('redner:innenliste')
-    ) {
-      detectedType = 'ENDE_REDNER';
-      confidence = 'high';
-    } else if (
-      /\b(aäa|äa|abänderungsantrag|abänderung)\b/i.test(trimmed) ||
-      /^\[?(?:aäa|äa)\]?/i.test(trimmed)
-    ) {
-      detectedType = 'AAA';
-      confidence = 'high';
-    } else if (
-      /\b(ea|erweiterungsantrag|erweiterung)\b/i.test(trimmed) ||
-      /^\[?ea\]?/i.test(trimmed)
-    ) {
-      detectedType = 'EA';
-      confidence = 'high';
-    } else if (
-      /\b(sa|streichungsantrag|streichung)\b/i.test(trimmed) ||
-      /^\[?sa\]?/i.test(trimmed)
-    ) {
-      detectedType = 'SA';
-      confidence = 'high';
-    } else if (
-      /\b(wm|wortmeldung)\b/i.test(trimmed) ||
-      /^\[?wm\]?/i.test(trimmed)
-    ) {
-      detectedType = 'WM';
-      confidence = 'high';
-    } else if (
-      lower.includes('geschäftsordnungsantrag') ||
-      lower.includes('go-antrag')
-    ) {
-      detectedType = 'SONSTIGES';
-      confidence = 'medium';
+      return { type: 'ENDE_DEBATTE', confidence: 'high' };
     }
-
-    if (!detectedType) {
-      // Wenn der Block keinen eindeutigen Antragskopf hat, aber signifikant ist
-      continue;
+    if (
+      /^(?:ende\s+der\s+redner|schluss\s+der\s+redner|rednerliste\s+schließen|redner:innenliste)\b/i.test(trimmed)
+    ) {
+      return { type: 'ENDE_REDNER', confidence: 'high' };
     }
-
-    // Extrahiere Zeilen- / Paragrafen-Bezug (z.B. "Zeile 30-35", "Z. 12", "§ 4 Abs. 1")
-    let lineOrParagraph: string | undefined;
-    const lineMatch = trimmed.match(
-      /(?:(?:zeile|z\.|zeilen)\s*\d+(?:\s*-\s*\d+)?|§\s*\d+[a-z]?(?:\s*(?:abs\.|absatz)\s*\d+)?)/i
-    );
-    if (lineMatch) {
-      lineOrParagraph = lineMatch[0];
+    if (
+      /^(?:\d+[\.\)]\s*)?(?:(?:mögliche[rs]?|eventuell(?:er)?|antwort)\s+)?\[?(?:aäa|äa|aä|abänderungsantrag)\s*\d*\]?(?=\s|\(|:|\/|\-|$)/i.test(
+        trimmed
+      )
+    ) {
+      return { type: 'AAA', confidence: 'high' };
     }
-
-    // Extrahiere Titel & Hauptinhalt
-    const firstLine = trimmed.split(/\r?\n/)[0].trim();
-    let title = firstLine.slice(0, 80);
-    if (firstLine.length > 80) title += '...';
-
-    // Säubere den Titel von Präfixen wie "[AÄA] "
-    title = title.replace(/^\[?(?:WM|AÄA|ÄA|EA|SA|Antrag)\]?[:\s-]*/i, '').trim();
-    if (!title) {
-      title = `${detectedType} (Dokumentenauszug #${counter})`;
+    if (
+      /^(?:\d+[\.\)]\s*)?(?:(?:mögliche[rs]?|eventuell(?:er)?)\s+)?\[?(?:ea|erweiterungsantrag)\s*\d*\]?(?=\s|\(|:|\/|\-|$)/i.test(
+        trimmed
+      )
+    ) {
+      return { type: 'EA', confidence: 'high' };
     }
+    if (
+      /^(?:\d+[\.\)]\s*)?(?:(?:mögliche[rs]?|eventuell(?:er)?)\s+)?\[?(?:sa|streichungsantrag)\s*\d*\]?(?=\s|\(|:|\/|\-|$)/i.test(
+        trimmed
+      )
+    ) {
+      return { type: 'SA', confidence: 'high' };
+    }
+    if (
+      /^(?:\d+[\.\)]\s*)?(?:(?:mögliche[rs]?)\s+)?\[?(?:wm|wortmeldung)\s*\d*\]?(?=\s|\(|:|\/|\-|$)/i.test(
+        trimmed
+      )
+    ) {
+      return { type: 'WM', confidence: 'high' };
+    }
+    if (lower.startsWith('geschäftsordnungsantrag') || lower.startsWith('go-antrag')) {
+      return { type: 'SONSTIGES', confidence: 'medium' };
+    }
+    return null;
+  };
 
-    results.push({
-      id: `parsed_${Date.now()}_${counter++}`,
-      type: detectedType,
-      title,
-      content: trimmed,
-      lineOrParagraph,
-      confidence,
-      selected: true,
-    });
+  const flushBuffer = () => {
+    if (!activeBuffer) return;
+    const finalText = activeBuffer.text.trim();
+    if (finalText.length >= 2) {
+      const lineMatch = finalText.match(
+        /(?:(?:zeile|z\.|zeilen|fp|forderungspunkt)\s*\d+(?:\s*-\s*\d+)?|§\s*\d+[a-z]?(?:\s*(?:abs\.|absatz)\s*\d+)?)/i
+      );
+      if (lineMatch && !activeBuffer.lineOrParagraph) {
+        activeBuffer.lineOrParagraph = lineMatch[0];
+      }
+      activeBuffer.text = finalText;
+      activeBuffer.content = finalText;
+      results.push(activeBuffer);
+    }
+    activeBuffer = null;
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+
+    const header = detectHeaderType(trimmed);
+    if (header) {
+      flushBuffer();
+      let title = trimmed.slice(0, 80);
+      if (trimmed.length > 80) title += '...';
+      title = title.replace(/^\[?(?:WM|AÄA|ÄA|AÄ|EA|SA|Antrag)\s*\d*\]?[:\s-]*/i, '').trim();
+      if (!title) {
+        title = `${header.type} (Dokumentenauszug #${counter})`;
+      }
+
+      const colonIdx = trimmed.indexOf(':');
+      const initialBody = colonIdx !== -1 ? trimmed.slice(colonIdx + 1).trim() : trimmed;
+
+      activeBuffer = {
+        id: `parsed_${Date.now()}_${counter++}`,
+        type: header.type,
+        title,
+        text: initialBody,
+        content: initialBody,
+        confidence: header.confidence,
+        selected: true,
+      };
+    } else if (activeBuffer) {
+      activeBuffer.text = activeBuffer.text ? `${activeBuffer.text}\n${trimmed}` : trimmed;
+      activeBuffer.content = activeBuffer.text;
+    }
   }
 
+  flushBuffer();
   return results;
 }
 
@@ -129,7 +139,8 @@ export function convertParsedToSipAntraege(
     id: `antrag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type: item.type,
     title: item.title,
-    content: item.content,
+    content: item.text || item.content,
+    text: item.text || item.content,
     lineOrParagraph: item.lineOrParagraph,
     author: sourceLabel,
     isPreFab: true,

@@ -1,7 +1,10 @@
 import { extractTextFromPdfArrayBuffer } from './pdfHelper';
 import { extractTextFromDocxArrayBuffer } from './docxHelper';
+import { SipAntrag } from '../types';
 import {
   parseAntragsmappeText,
+  parseStrategieSubMotions,
+  createNebenantraegeFromExtracted,
   combineAntragsmappeAndStrategie,
   AutoImportProgressCallback,
   AutoImportResult,
@@ -397,8 +400,18 @@ export class DriveDownloadBlockedError extends Error {
   status: number;
   isDownloadBlocked = true;
   manifest?: GoogleDriveFolderManifest;
+  pendingNebenantraege?: SipAntrag[];
+  strategyNotes?: string;
+  strategieText?: string;
 
-  constructor(file: DriveFileInfo, status: number, manifest?: GoogleDriveFolderManifest) {
+  constructor(
+    file: DriveFileInfo,
+    status: number,
+    manifest?: GoogleDriveFolderManifest,
+    pendingNebenantraege?: SipAntrag[],
+    strategyNotes?: string,
+    strategieText?: string
+  ) {
     super(
       `Google blockiert den automatischen Download von "${file.name}" (HTTP ${status || 'CORS/403/408'}).`
     );
@@ -406,6 +419,9 @@ export class DriveDownloadBlockedError extends Error {
     this.file = file;
     this.status = status;
     this.manifest = manifest;
+    this.pendingNebenantraege = pendingNebenantraege;
+    this.strategyNotes = strategyNotes;
+    this.strategieText = strategieText;
   }
 }
 
@@ -481,20 +497,80 @@ export interface ExecuteOnlineDriveImportOptions {
   onProgress?: AutoImportProgressCallback;
   manualPdfBuffer?: ArrayBuffer;
   cachedManifest?: GoogleDriveFolderManifest;
+  cachedStrategieText?: string;
+}
+
+/**
+ * Lädt alle Strategiedateien (DOCX) aus dem Manifest herunter und parst die Nebenanträge nach dem Buffer-Pattern.
+ */
+export async function downloadAndParseDriveStrategieFiles(
+  manifest: GoogleDriveFolderManifest,
+  onProgress?: AutoImportProgressCallback,
+  startPercent: number = 25,
+  spanPercent: number = 32
+): Promise<{
+  combinedStrategieText: string;
+  nebenantraege: SipAntrag[];
+  strategyNotes: string;
+}> {
+  const totalStrats = manifest.strategieFiles.length;
+  const indexedStrategieTexts: Array<{ index: number; text: string }> = [];
+  const batchSize = 6;
+
+  for (let start = 0; start < totalStrats; start += batchSize) {
+    const batch = manifest.strategieFiles.slice(start, start + batchSize);
+    const pct = Math.round(startPercent + (start / Math.max(1, totalStrats)) * spanPercent);
+    onProgress?.({
+      percent: pct,
+      statusText: `Lade Strategiedokumente herunter (${Math.min(
+        totalStrats,
+        start + 1
+      )}–${Math.min(totalStrats, start + batch.length)} von ${totalStrats})...`,
+    });
+
+    await Promise.all(
+      batch.map(async (file, bIdx) => {
+        const idx = start + bIdx;
+        try {
+          const docxBuffer = await downloadDriveFileAsArrayBuffer(file);
+          const text = await extractTextFromDocxArrayBuffer(docxBuffer);
+          if (text.trim()) {
+            indexedStrategieTexts.push({
+              index: idx,
+              text: `--- Strategie: ${file.name} ---\n${text}`,
+            });
+          }
+        } catch (err) {
+          console.warn(`Fehler beim Laden von Strategiedatei ${file.name}:`, err);
+        }
+      })
+    );
+  }
+
+  indexedStrategieTexts.sort((a, b) => a.index - b.index);
+  const combinedStrategieText = indexedStrategieTexts.map((item) => item.text).join('\n\n');
+  const { subMotions, generalStrategyNotes } = parseStrategieSubMotions(combinedStrategieText);
+  const { nebenantraege } = createNebenantraegeFromExtracted(subMotions);
+
+  return {
+    combinedStrategieText,
+    nebenantraege,
+    strategyNotes: generalStrategyNotes,
+  };
 }
 
 /**
  * Führt den vollautomatischen Online-Import aus dem Google Drive Ordner durch:
  * 1. Ruft den Ordner online ab und ignoriert alles andere
- * 2. Lädt die Antragsmappe (PDF) online herunter (oder verwendet den manuellen Buffer)
- * 3. Lädt alle Strategiedateien (DOCX) online herunter
- * 4. Führt Antrag für Antrag sequenziell mit Ladebalken zusammen
+ * 2. Lädt die Strategiedateien (DOCX) herunter, damit `pendingNebenantraege` auch bei PDF-Blockade sofort bereitstehen
+ * 3. Lädt die Antragsmappe (PDF) online herunter (oder verwendet den manuellen Buffer)
+ * 4. Führt Hauptanträge und Nebenanträge im expliziten Merge zusammen
  * 5. Gibt die finale Meldung "Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!" zurück
  */
 export async function executeOnlineDriveImport(
   options: ExecuteOnlineDriveImportOptions
 ): Promise<AutoImportResult> {
-  const { folderUrlOrId, onProgress, manualPdfBuffer, cachedManifest } = options;
+  const { folderUrlOrId, onProgress, manualPdfBuffer, cachedManifest, cachedStrategieText } = options;
 
   onProgress?.({
     percent: 5,
@@ -519,11 +595,28 @@ export async function executeOnlineDriveImport(
     );
   }
 
-  // 2. Antragsmappe (PDF) verarbeiten (per manuellem Buffer oder automatischem Download)
+  // 2. Strategiedateien (DOCX) online herunterladen (falls nicht bereits gecached),
+  // damit die DOCX-Nebenanträge (pendingNebenantraege) in jedem Fall vorab im State verfügbar sind!
+  let combinedStrategieText = cachedStrategieText || '';
+  let preParsedNebenantraege: SipAntrag[] = [];
+  let preParsedStrategyNotes = '';
+
+  if (!combinedStrategieText && manifest.strategieFiles.length > 0) {
+    const stratRes = await downloadAndParseDriveStrategieFiles(manifest, onProgress, 15, 28);
+    combinedStrategieText = stratRes.combinedStrategieText;
+    preParsedNebenantraege = stratRes.nebenantraege;
+    preParsedStrategyNotes = stratRes.strategyNotes;
+  } else if (combinedStrategieText) {
+    const { subMotions, generalStrategyNotes } = parseStrategieSubMotions(combinedStrategieText);
+    preParsedNebenantraege = createNebenantraegeFromExtracted(subMotions).nebenantraege;
+    preParsedStrategyNotes = generalStrategyNotes;
+  }
+
+  // 3. Antragsmappe (PDF) verarbeiten (per manuellem Buffer oder automatischem Download)
   let antragsmappeText = '';
   if (manualPdfBuffer) {
     onProgress?.({
-      percent: 24,
+      percent: 48,
       statusText: 'Verarbeite manuell hochgeladene Antragsmappe...',
     });
     try {
@@ -537,17 +630,17 @@ export async function executeOnlineDriveImport(
     console.log('Manuell hochgeladene PDF geparst. Anzahl Hauptanträge:', hauptantraege.length);
   } else if (manifest.antragsmappe) {
     onProgress?.({
-      percent: 18,
+      percent: 45,
       statusText: `Lade Antragsmappe herunter (${manifest.antragsmappe.name})...`,
     });
     try {
       const pdfBuffer = await downloadDriveFileAsArrayBuffer(
         manifest.antragsmappe,
-        (status) => onProgress?.({ percent: 22, statusText: status })
+        (status) => onProgress?.({ percent: 50, statusText: status })
       );
 
       onProgress?.({
-        percent: 26,
+        percent: 56,
         statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
       });
       try {
@@ -564,7 +657,10 @@ export async function executeOnlineDriveImport(
       const blockedErr = new DriveDownloadBlockedError(
         manifest.antragsmappe,
         err.status || 403,
-        manifest
+        manifest,
+        preParsedNebenantraege,
+        preParsedStrategyNotes,
+        combinedStrategieText
       );
       throw blockedErr;
     }
@@ -582,7 +678,7 @@ export async function executeOnlineDriveImport(
 
     for (let start = 0; start < totalHauptFiles; start += hBatchSize) {
       const batch = manifest.hauptantragFiles.slice(start, start + hBatchSize);
-      const pct = Math.round(26 + (start / Math.max(1, totalHauptFiles)) * 12);
+      const pct = Math.round(56 + (start / Math.max(1, totalHauptFiles)) * 8);
       onProgress?.({
         percent: pct,
         statusText: `Lade Hauptanträge herunter (${Math.min(
@@ -619,44 +715,6 @@ export async function executeOnlineDriveImport(
     }
   }
 
-  // 3. Strategiedateien (DOCX) online herunterladen (in schnellen Batches à 6 Dateien parallel)
-  const totalStrats = manifest.strategieFiles.length;
-  const indexedStrategieTexts: Array<{ index: number; text: string }> = [];
-  const batchSize = 6;
-
-  for (let start = 0; start < totalStrats; start += batchSize) {
-    const batch = manifest.strategieFiles.slice(start, start + batchSize);
-    const pct = Math.round(30 + (start / Math.max(1, totalStrats)) * 32);
-    onProgress?.({
-      percent: pct,
-      statusText: `Lade Strategiedokumente herunter (${Math.min(
-        totalStrats,
-        start + 1
-      )}–${Math.min(totalStrats, start + batch.length)} von ${totalStrats})...`,
-    });
-
-    await Promise.all(
-      batch.map(async (file, bIdx) => {
-        const idx = start + bIdx;
-        try {
-          const docxBuffer = await downloadDriveFileAsArrayBuffer(file);
-          const text = await extractTextFromDocxArrayBuffer(docxBuffer);
-          if (text.trim()) {
-            indexedStrategieTexts.push({
-              index: idx,
-              text: `--- Strategie: ${file.name} ---\n${text}`,
-            });
-          }
-        } catch (err) {
-          console.warn(`Fehler beim Laden von Strategiedatei ${file.name}:`, err);
-        }
-      })
-    );
-  }
-
-  indexedStrategieTexts.sort((a, b) => a.index - b.index);
-  const combinedStrategieText = indexedStrategieTexts.map((item) => item.text).join('\n\n');
-
   // 4. Sequenziell Antrag für Antrag zusammensetzen mit Live-Ladebalken
   onProgress?.({
     percent: 65,
@@ -664,8 +722,8 @@ export async function executeOnlineDriveImport(
   });
 
   const combined = combineAntragsmappeAndStrategie(antragsmappeText, combinedStrategieText);
-  const hauptAntraege = combined.antraege.filter((a) => a.type === 'HAUPTANTRAG');
-  const subAntraege = combined.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+  const hauptAntraege = combined.hauptantraege;
+  const subAntraege = combined.nebenantraege;
   console.log(
     `[ONLINE-DRIVE] Import abgeschlossen: ${combined.antraege.length} Anträge gesamt (${hauptAntraege.length} Hauptanträge, ${subAntraege.length} Nebenanträge/WM)`
   );
@@ -701,6 +759,8 @@ export async function executeOnlineDriveImport(
     success: combined.antraege.length > 0,
     message: finalMessage,
     antraege: combined.antraege,
+    hauptantraege: combined.hauptantraege,
+    nebenantraege: combined.nebenantraege,
     summary: {
       ...combined.summary,
       strategyFilesCount: manifest.strategieFiles.length,

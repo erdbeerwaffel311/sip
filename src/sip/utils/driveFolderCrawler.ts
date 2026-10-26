@@ -224,9 +224,9 @@ export async function crawlDriveFolderLive(
   }
 
   // 1. Suche nach der Antragsmappe (PDF) im Hauptordner
-  // Bevorzuge PDFs mit "Antragsmappe" im Namen, die NICHT nur "Vorab-Kommentierung" heißen
+  // Bevorzuge PDFs mit "Antragsmappe" im Namen (egal ob mit .pdf-Endung oder ohne)
   const pdfEntries = rootEntries.filter(
-    (e) => !e.isFolder && e.name.toLowerCase().endsWith('.pdf')
+    (e) => !e.isFolder && (e.name.toLowerCase().endsWith('.pdf') || /antragsmappe/i.test(e.name))
   );
 
   const primaryAntragsmappe =
@@ -482,9 +482,16 @@ export async function executeOnlineDriveImport(options: {
         percent: 26,
         statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
       });
-      antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
-    } catch (err) {
-      console.warn('Fehler beim Extrahieren der Antragsmappe:', err);
+      try {
+        antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
+      } catch (pdfErr) {
+        console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
+        antragsmappeText = await extractTextFromDocxArrayBuffer(pdfBuffer);
+      }
+      console.log(`[DRIVE-PDF] Antragsmappe "${manifest.antragsmappe.name}" extrahiert (${antragsmappeText.length} Zeichen)`);
+    } catch (err: any) {
+      console.error('Fehler beim Extrahieren der Antragsmappe:', err);
+      throw new Error(`Fehler beim Laden der Antragsmappe (${manifest.antragsmappe.name}): ${err?.message || err}`);
     }
   }
 
@@ -583,6 +590,10 @@ export async function executeOnlineDriveImport(options: {
 
   const combined = combineAntragsmappeAndStrategie(antragsmappeText, combinedStrategieText);
   const hauptAntraege = combined.antraege.filter((a) => a.type === 'HAUPTANTRAG');
+  const subAntraege = combined.antraege.filter((a) => a.type !== 'HAUPTANTRAG');
+  console.log(
+    `[ONLINE-DRIVE] Import abgeschlossen: ${combined.antraege.length} Anträge gesamt (${hauptAntraege.length} Hauptanträge, ${subAntraege.length} Nebenanträge/WM)`
+  );
   const totalMotions = Math.max(1, hauptAntraege.length);
 
   for (let i = 0; i < hauptAntraege.length; i++) {

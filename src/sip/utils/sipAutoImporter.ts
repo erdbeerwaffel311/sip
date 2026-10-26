@@ -275,6 +275,17 @@ export function parseAntragsmappeText(rawText: string): {
     rawBlocks = fallbackSplit.length > 1 ? fallbackSplit : rawBlocks.length > 0 ? rawBlocks : [cleanText];
   }
 
+  // Variante E: Wenn weniger als 2 Blöcke gefunden wurden, nach PDF-Seiten ("--- SEITE X ---") trennen
+  if (rawBlocks.length <= 1 && /---\s*seite\s*\d+\s*---/i.test(cleanText)) {
+    const pageBlocks = cleanText
+      .split(/(?=---\s*seite\s*\d+\s*---)/gi)
+      .map((b) => b.trim())
+      .filter((b) => b.length > 20);
+    if (pageBlocks.length > 1) {
+      rawBlocks = pageBlocks;
+    }
+  }
+
   const hauptAntraege: ParsedHauptAntrag[] = [];
   let counter = 1;
 
@@ -818,12 +829,13 @@ export function combineAntragsmappeAndStrategie(
   };
 } {
   // =========================================================================
-  // PHASE 1: Das PDF (Antragsmappe) ist GOTT für den Hauptantrag
+  // 1. Array aus dem PDF-Parser liefert alle Hauptanträge
   // =========================================================================
   const { hauptAntraege, goExcluded } = parseAntragsmappeText(antragsmappeText);
+  console.log(`[PDF-PARSER] Anzahl gefundener Hauptanträge aus PDF: ${hauptAntraege.length}`);
 
   // Voll fertige, unantastbare Hauptantrag-Objekte direkt aus der PDF Antragsmappe
-  const holyHauptAntraege: SipAntrag[] = hauptAntraege.map((h, hIdx) => {
+  const hauptantraegeAusPDF: SipAntrag[] = hauptAntraege.map((h, hIdx) => {
     return {
       id: `antrag_${hIdx + 1}`,
       type: 'HAUPTANTRAG' as const,
@@ -844,36 +856,34 @@ export function combineAntragsmappeAndStrategie(
   });
 
   // =========================================================================
-  // PHASE 2: Die DOCX (Strategie) ist reiner ZULIEFERER für Nebenanträge/Wortmeldungen
+  // 2. Array aus dem DOCX-Parser liefert alle Nebenanträge und Wortmeldungen
   // =========================================================================
-  // Der Parser für die DOCX darf KEINEN Hauptantrag mehr auslesen.
-  // Ignoriere jeden Text im DOCX, der für den Hauptantrag gedacht wäre (wie z. B. 'Siehe SiP-Antragsmappe').
-  // Die DOCX-Dateien werden AUSSCHLIESSLICH nach Mustern für Nebenanträge und Wortmeldungen gescannt.
   const { subMotions, generalStrategyNotes } = parseStrategieSubMotions(strategieText);
+  console.log(`[DOCX-PARSER] Anzahl gefundener Nebenanträge/Wortmeldungen aus DOCX: ${subMotions.length}`);
 
-  const finalSubAntraege: SipAntrag[] = [];
+  const nebenantraegeAusDOCX: SipAntrag[] = [];
   const subCounterPerParent: Record<string, number> = {};
   let matchedCount = 0;
 
   for (const sub of subMotions) {
     // Finde den zugehörigen heiligen Hauptantrag aus Phase 1:
     // Priorität 1: Über Antragsnummer (z. B. 1_...docx zu Antrag 1)
-    let parent = holyHauptAntraege.find((h, idx) => {
+    let parent = hauptantraegeAusPDF.find((h, idx) => {
       const motionNum = hauptAntraege[idx]?.index || (idx + 1);
       return sub.targetMotionNumber && sub.targetMotionNumber === motionNum;
     });
 
     // Priorität 2: Über Titel-Match
     if (!parent && sub.targetMotionTitle) {
-      parent = holyHauptAntraege.find((h) =>
+      parent = hauptantraegeAusPDF.find((h) =>
         isTitleMatching(sub.targetMotionTitle!, h.title)
       );
     }
 
     if (parent) {
       matchedCount++;
-    } else if (holyHauptAntraege.length > 0) {
-      parent = holyHauptAntraege[0];
+    } else if (hauptantraegeAusPDF.length > 0) {
+      parent = hauptantraegeAusPDF[0];
     }
 
     const parentId = parent?.id;
@@ -898,21 +908,26 @@ export function combineAntragsmappeAndStrategie(
       isActive: false,
       createdAt: new Date(baseTimestamp + parentOrderIndex * 1000 + subIdx * 100).toISOString(),
     };
-    finalSubAntraege.push(subMotion);
+    nebenantraegeAusDOCX.push(subMotion);
   }
 
-  // Anträge zusammenführen: Die heiligen Hauptanträge + die reinen Subanträge
-  // ES GIBT KEINEN CODE, DER EINEN HAUPTANTRAG AUS DER DOCX ERSTELLT ODER EINES SEINER FELDER ANFASST!
-  const resultAntraege: SipAntrag[] = [...holyHauptAntraege, ...finalSubAntraege];
+  // =========================================================================
+  // 3. Finale Vereinigung: Hauptanträge aus PDF + Nebenanträge aus DOCX
+  // =========================================================================
+  const allMotions: SipAntrag[] = [...hauptantraegeAusPDF, ...nebenantraegeAusDOCX];
 
   // Strikte parlamentarische Reihenfolge: Sortierung nach orderIndex aufsteigend
-  resultAntraege.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+  allMotions.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
-  const subCount = finalSubAntraege.length;
-  const hauptCount = holyHauptAntraege.length;
+  console.log(
+    `[MERGE-FINAL] Gesamt im finalen Array: ${allMotions.length} Anträge (${hauptantraegeAusPDF.length} Hauptanträge, ${nebenantraegeAusDOCX.length} Nebenanträge/WM)`
+  );
+
+  const subCount = nebenantraegeAusDOCX.length;
+  const hauptCount = hauptantraegeAusPDF.length;
 
   return {
-    antraege: resultAntraege,
+    antraege: allMotions,
     strategyNotes: generalStrategyNotes,
     summary: {
       hauptAntraegeCount: hauptCount,

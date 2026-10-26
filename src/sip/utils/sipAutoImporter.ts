@@ -915,61 +915,53 @@ export function combineAntragsmappeAndStrategie(
   const matchedSectionIndices = new Set<number>();
 
   // 1. Verarbeite Hauptanträge aus der Antragsmappe und verknüpfe passende Strategie-Sektionen
+  // REGEL 1: Die PDF-Antragsmappe ist die Single Source of Truth für Hauptanträge!
+  // title, author, content (Begründung) und forderungspunkte (Forderungen) stammen strikt aus der PDF.
+  // REGEL 2: DOCX-Dateien werden dem jeweiligen Hauptantrag über die Antragsnummer zugeordnet (z. B. 1_...docx zu Antrag 1).
   hauptAntraege.forEach((h, hIdx) => {
     const hauptAntragId = `antrag_${hIdx + 1}`;
+    const motionNum = h.index || (hIdx + 1);
 
-    // Suche alle passenden Strategie-Sektionen (Titel-Match oder identische Antragsnummer)
+    // Suche alle passenden Strategie-Sektionen:
+    // Priorität 1: Direkte Zuordnung über die Antragsnummer (z. B. 1_...docx zu Antrag 1)
     const matchingIndices: number[] = [];
     sections.forEach((s, sIdx) => {
-      if (isTitleMatching(s.motionTitle, h.cleanTitle)) {
+      if (s.motionNumber && s.motionNumber === motionNum) {
         matchingIndices.push(sIdx);
       }
     });
 
-    // Fallback: Wenn keine Sektion über den Titel gematcht wurde, prüfe über explizite motionNumber
-    if (matchingIndices.length === 0) {
-      sections.forEach((s, sIdx) => {
-        if (!matchedSectionIndices.has(sIdx) && s.motionNumber && s.motionNumber === h.index) {
-          matchingIndices.push(sIdx);
-        }
-      });
-    }
+    // Priorität 2: Zuordnung über Titel-Übereinstimmung
+    sections.forEach((s, sIdx) => {
+      if (!matchingIndices.includes(sIdx) && isTitleMatching(s.motionTitle, h.cleanTitle)) {
+        matchingIndices.push(sIdx);
+      }
+    });
 
     const matchedSections = matchingIndices.map((idx) => {
       matchedSectionIndices.add(idx);
       return sections[idx];
     });
 
-    const strategyFps = matchedSections.find(
-      (s) => s.forderungspunkte && s.forderungspunkte.length > 0
-    )?.forderungspunkte;
-    const strategyAuthor = matchedSections.find((s) => s.author)?.author;
+    // Aus DOCX werden AUSSCHLIESSLICH ergänzende Daten extrahiert:
+    // Interne Strategie-Notizen und Nebenanträge/Wortmeldungen.
+    // NIEMALS wird der Begründungstext oder die Forderungsliste der PDF überschrieben!
     const strategyNotesForMotion = matchedSections
       .map((s) => s.notes)
       .filter(Boolean)
       .join('\n');
 
-    const finalFps =
-      h.forderungspunkte && h.forderungspunkte.length > 0
-        ? h.forderungspunkte
-        : strategyFps || [];
-    const finalAuthor =
-      h.author && h.author !== 'Schüler:innenparlament'
-        ? h.author
-        : strategyAuthor || h.author;
-    // Antragstext wird strikt aus der SiP-Antragsmappe übernommen (Text vor und Begründung nach Forderungen).
-    // Er wird NIEMALS durch die Forderungspunkte oder interne Strategie-Notizen ersetzt!
-    const finalContent = h.content?.trim() || 'Antragstext siehe SiP-Antragsmappe';
-
     const mainMotion: SipAntrag = {
       id: hauptAntragId,
       type: 'HAUPTANTRAG',
-      title: h.cleanTitle,
-      author: finalAuthor,
-      rede: finalContent,       // Echter Antragstext / Begründung aus der SiP-Antragsmappe
-      content: finalContent,    // Echter Antragstext / Begründung aus der SiP-Antragsmappe
-      forderungspunkte: finalFps,
+      orderIndex: hIdx, // Fortlaufender 0-basierter Index der parlamentarischen Reihenfolge (0, 1, 2...)
+      title: h.cleanTitle, // PDF Single Source of Truth
+      author: h.author || 'Schüler:innenparlament', // PDF Single Source of Truth
+      rede: h.content, // PDF Single Source of Truth (echter Begründungstext)
+      content: h.content, // PDF Single Source of Truth (echter Begründungstext)
+      forderungspunkte: h.forderungspunkte || [], // PDF Single Source of Truth
       lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
+      adminNotes: strategyNotesForMotion || undefined,
       isPreFab: true,
       status: 'approved',
       claimedBy: null,
@@ -983,8 +975,9 @@ export function combineAntragsmappeAndStrategie(
     for (const matchingSection of matchedSections) {
       for (const sub of matchingSection.subAntraege) {
         const subMotion: SipAntrag = {
-          id: `antrag_sub_${hIdx + 1}_${subCounter++}`,
+          id: `antrag_sub_${hIdx + 1}_${subCounter}`,
           parentAntragId: hauptAntragId,
+          orderIndex: hIdx + subCounter / 1000, // Parlamentarische Reihung direkt beim jeweiligen Hauptantrag
           type: sub.type,
           // Titel bereinigen: keine Namen oder "(XX)" im Titel
           title: cleanSubMotionTitle(sub.title),
@@ -999,12 +992,17 @@ export function combineAntragsmappeAndStrategie(
           createdAt: new Date(baseTimestamp + hIdx * 1000 + subCounter * 100).toISOString(),
         };
         resultAntraege.push(subMotion);
+        subCounter++;
       }
     }
   });
 
-  // 2. Falls in den Strategiedateien Anträge vorhanden sind, die nicht in der Antragsmappe standen
+  // 2. Behandle nicht-gematchte Strategie-Sektionen
+  // WICHTIG: Wenn Hauptanträge aus der PDF existieren, werden NIEMALS zusätzliche Dummy-Hauptanträge
+  // mit 'Antragstext siehe SiP-Antragsmappe' erstellt!
   sections.forEach((sec, sIdx) => {
+    if (matchedSectionIndices.has(sIdx)) return;
+
     if (
       sec.motionTitle === 'Allgemeine Strategieanträge' &&
       (hauptAntraege.length > 0 || sections.length > 1)
@@ -1012,62 +1010,90 @@ export function combineAntragsmappeAndStrategie(
       return;
     }
 
-    const hasContent =
-      sec.subAntraege.length > 0 ||
-      (sec.forderungspunkte && sec.forderungspunkte.length > 0) ||
-      Boolean(sec.notes);
+    if (hauptAntraege.length > 0) {
+      // PDF existiert: Versuche verbleibende Nebenanträge zuzuordnen oder notiere als Strategiehinweis
+      if (sec.motionNumber && sec.motionNumber <= hauptAntraege.length) {
+        const parentId = `antrag_${sec.motionNumber}`;
+        const parentIndex = sec.motionNumber - 1;
+        sec.subAntraege.forEach((sub, subIdx) => {
+          resultAntraege.push({
+            id: `antrag_sub_${sec.motionNumber}_extra_${subIdx + 1}`,
+            parentAntragId: parentId,
+            orderIndex: parentIndex + (50 + subIdx) / 1000,
+            type: sub.type,
+            title: cleanSubMotionTitle(sub.title),
+            content: sub.content,
+            lineOrParagraph: sub.lineOrParagraph || `Antrag ${sec.motionNumber}`,
+            author: sub.author || 'Delegierte:r',
+            claimedBy: sub.claimedBy || null,
+            claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+            isPreFab: true,
+            status: 'approved',
+            isActive: false,
+            createdAt: new Date(baseTimestamp + parentIndex * 1000 + (subIdx + 1) * 100).toISOString(),
+          });
+        });
+      }
+    } else {
+      // Fallback NUR wenn überhaupt keine PDF-Antragsmappe vorhanden war (z.B. Offline-DOCX-Test)
+      const hasContent =
+        sec.subAntraege.length > 0 ||
+        (sec.forderungspunkte && sec.forderungspunkte.length > 0) ||
+        Boolean(sec.notes);
 
-    if (!matchedSectionIndices.has(sIdx) && hasContent) {
-      const motionNum = sec.motionNumber || hauptAntraege.length + sIdx + 1;
-      const extraHauptId = `antrag_extra_${sIdx + 1}`;
-      const cleanSecTitle = sec.motionTitle.replace(/^Antrag\s*\d+\s*[:.\-]\s*/i, '').trim();
-      const formattedTitle = /^antrag\s*\d+/i.test(sec.motionTitle)
-        ? sec.motionTitle
-        : `Antrag ${motionNum}: ${cleanSecTitle}`;
+      if (hasContent) {
+        const motionNum = sec.motionNumber || (sIdx + 1);
+        const extraHauptId = `antrag_extra_${sIdx + 1}`;
+        const cleanSecTitle = sec.motionTitle.replace(/^Antrag\s*\d+\s*[:.\-]\s*/i, '').trim();
+        const formattedTitle = /^antrag\s*\d+/i.test(sec.motionTitle)
+          ? sec.motionTitle
+          : `Antrag ${motionNum}: ${cleanSecTitle}`;
 
-      // Antragstext darf NIEMALS aus den internen Strategie-Notizen oder reinen Forderungspunkten bestehen
-      const extraContent = 'Antragstext siehe SiP-Antragsmappe';
-
-      const extraMain: SipAntrag = {
-        id: extraHauptId,
-        type: 'HAUPTANTRAG',
-        title: formattedTitle,
-        author: sec.author || 'Schüler:innenparlament',
-        rede: extraContent,
-        content: extraContent,
-        forderungspunkte: sec.forderungspunkte || [],
-        lineOrParagraph: `Antrag ${motionNum}`,
-        isPreFab: true,
-        status: 'approved',
-        claimedBy: null,
-        claimedAt: null,
-        isActive: false,
-        createdAt: new Date(baseTimestamp + (hauptAntraege.length + sIdx) * 1000).toISOString(),
-      };
-      resultAntraege.push(extraMain);
-
-      sec.subAntraege.forEach((sub, subIdx) => {
-        resultAntraege.push({
-          id: `antrag_sub_extra_${sIdx + 1}_${subIdx + 1}`,
-          parentAntragId: extraHauptId,
-          type: sub.type,
-          // Titel bereinigen: keine Namen oder "(XX)" im Titel
-          title: cleanSubMotionTitle(sub.title),
-          content: sub.content,
-          lineOrParagraph: sub.lineOrParagraph || `Antrag ${motionNum}`,
-          author: sub.author || 'Delegierte:r',
-          claimedBy: sub.claimedBy || null,
-          claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+        const extraMain: SipAntrag = {
+          id: extraHauptId,
+          type: 'HAUPTANTRAG',
+          orderIndex: sIdx,
+          title: formattedTitle,
+          author: sec.author || 'Schüler:innenparlament',
+          rede: sec.notes || '',
+          content: sec.notes || '',
+          forderungspunkte: sec.forderungspunkte || [],
+          lineOrParagraph: `Antrag ${motionNum}`,
           isPreFab: true,
           status: 'approved',
+          claimedBy: null,
+          claimedAt: null,
           isActive: false,
-          createdAt: new Date(
-            baseTimestamp + (hauptAntraege.length + sIdx) * 1000 + (subIdx + 1) * 100
-          ).toISOString(),
+          createdAt: new Date(baseTimestamp + sIdx * 1000).toISOString(),
+        };
+        resultAntraege.push(extraMain);
+
+        sec.subAntraege.forEach((sub, subIdx) => {
+          resultAntraege.push({
+            id: `antrag_sub_extra_${sIdx + 1}_${subIdx + 1}`,
+            parentAntragId: extraHauptId,
+            orderIndex: sIdx + (subIdx + 1) / 1000,
+            type: sub.type,
+            title: cleanSubMotionTitle(sub.title),
+            content: sub.content,
+            lineOrParagraph: sub.lineOrParagraph || `Antrag ${motionNum}`,
+            author: sub.author || 'Delegierte:r',
+            claimedBy: sub.claimedBy || null,
+            claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+            isPreFab: true,
+            status: 'approved',
+            isActive: false,
+            createdAt: new Date(
+              baseTimestamp + sIdx * 1000 + (subIdx + 1) * 100
+            ).toISOString(),
+          });
         });
-      });
+      }
     }
   });
+
+  // Strikte parlamentarische Reihenfolge: Sortierung nach orderIndex aufsteigend
+  resultAntraege.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
   const subCount = resultAntraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
   const hauptCount = resultAntraege.filter((a) => a.type === 'HAUPTANTRAG').length;

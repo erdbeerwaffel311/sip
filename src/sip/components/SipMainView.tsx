@@ -464,13 +464,16 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   }, [activeAntrag?.plenumResult, isDecisionExpired, session.voteRecommendation]);
 
   // 1. Hauptanträge im Plenum (nur Typ HAUPTANTRAG, die noch nicht entschieden/ausgefadet sind)
+  // Strikte parlamentarische Reihung nach orderIndex
   const hauptAntraege = useMemo(() => {
-    return filteredAntraege.filter((item) => {
-      if (item.type !== 'HAUPTANTRAG') return false;
-      // In der Normalansicht sind ausgefadete/entschiedene Anträge nicht mehr sichtbar
-      if (item.plenumResult) return false;
-      return true;
-    });
+    return filteredAntraege
+      .filter((item) => {
+        if (item.type !== 'HAUPTANTRAG') return false;
+        // In der Normalansicht sind ausgefadete/entschiedene Anträge nicht mehr sichtbar
+        if (item.plenumResult) return false;
+        return true;
+      })
+      .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [filteredAntraege]);
 
   // Vergangene Hauptanträge (vom Plenum entschieden & ausgefadet)

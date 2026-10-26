@@ -25,6 +25,7 @@ export interface SipAntrag {
   type: AntragType;
   title: string;
   content: string;
+  orderIndex?: number; // Parlamentarische Reihenfolge (basierend auf der PDF-Antragsmappe)
   rede?: string; // Vorbereitete Rede aus den SiP-Unterlagen
   forderungspunkte?: string[]; // Konkrete Forderungspunkte des Antrags
   lineOrParagraph?: string; // z.B. "Antrag 1" oder "Zeile 45-48"

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Gavel,
   ShieldCheck,
   User,
   LogOut,
@@ -249,8 +248,12 @@ export const App: React.FC = () => {
             onClick={() => setCurrentView('parliament')}
             className="flex items-center gap-2.5 cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 shrink-0">
-              <Gavel className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-lg shrink-0">
+              <img
+                src="./su-logo.png"
+                alt="Schülerunion Vorarlberg"
+                className="w-full h-full object-contain"
+              />
             </div>
             <div>
               <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-sky-400 block leading-tight">

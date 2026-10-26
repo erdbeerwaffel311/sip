@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Gavel,
   Lock,
   User,
   LogIn,
@@ -121,8 +120,12 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
       <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-white">
         {/* Header Icon & Title */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-sky-500/25 mb-3">
-            <Gavel className="w-8 h-8" />
+          <div className="w-20 h-20 rounded-2xl bg-white p-2 shadow-xl shadow-sky-500/10 flex items-center justify-center mb-3">
+            <img
+              src="./su-logo.png"
+              alt="Schülerunion Vorarlberg Logo"
+              className="w-full h-full object-contain"
+            />
           </div>
           <span className="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1">
             Schüler:innenparlament

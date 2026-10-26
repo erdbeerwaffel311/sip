@@ -297,21 +297,36 @@ export async function crawlDriveFolderLive(
     ? toDriveFileInfo(primaryAntragsmappe)
     : null;
 
-  // Prüfe zusätzlich, ob die Antragsmappe in einem eigenen Unterordner "Antragsmappe" liegt
+  // Prüfe zusätzlich, ob Hauptanträge in einem Unterordner liegen (z.B. "eingereichte Reihenfolge", "Hauptanträge" oder "Antragsmappe")
   const hauptantragFiles: DriveFileInfo[] = [];
-
-  if (!antragsmappe) {
-    const motionsSubfolder = rootEntries.find(
-      (e) => e.isFolder && /antragsmappe/i.test(e.name)
+  const motionsSubfolder = rootEntries.find(
+    (e) =>
+      e.isFolder &&
+      /eingereichte\s+reihenfolge|hauptantr[äa]ge|antragsmappe/i.test(e.name)
+  );
+  if (motionsSubfolder) {
+    onProgress?.(`Prüfe Unterordner "${motionsSubfolder.name}"...`);
+    const motionSubEntries = await fetchDriveFolderEntriesLive(motionsSubfolder.id);
+    const mappeInSub = motionSubEntries.find(
+      (e) =>
+        !e.isFolder &&
+        /antragsmappe/i.test(e.name) &&
+        !/vorab-kommentierung|bidi/i.test(e.name) &&
+        e.name.toLowerCase().endsWith('.pdf')
     );
-    if (motionsSubfolder) {
-      onProgress?.(`Prüfe Unterordner "${motionsSubfolder.name}"...`);
-      const motionSubEntries = await fetchDriveFolderEntriesLive(motionsSubfolder.id);
-      const mappeInSub = motionSubEntries.find(
-        (e) => !e.isFolder && /antragsmappe/i.test(e.name) && e.name.toLowerCase().endsWith('.pdf')
-      );
-      if (mappeInSub) {
-        antragsmappe = toDriveFileInfo(mappeInSub);
+    if (mappeInSub) {
+      antragsmappe = toDriveFileInfo(mappeInSub);
+    } else {
+      for (const entry of motionSubEntries) {
+        if (
+          !entry.isFolder &&
+          (entry.name.toLowerCase().endsWith('.pdf') ||
+            entry.name.toLowerCase().endsWith('.docx') ||
+            entry.isGoogleDoc) &&
+          !/bidi|kommentierung|leitfaden|geschäftsordnung|how\s+to/i.test(entry.name)
+        ) {
+          hauptantragFiles.push(toDriveFileInfo(entry));
+        }
       }
     }
   }

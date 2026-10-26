@@ -46,6 +46,27 @@ export interface AutoImportResult {
 }
 
 /**
+ * Entfernt Personennamen (z.B. "(Simon)", "- Simon") und Platzhalter (z.B. "(XX)", "(XXX)")
+ * aus dem Titel einer Wortmeldung oder eines Nebenantrags, sodass der Name nur dort steht,
+ * wo "geclaimed von" bzw. "noch nicht vergeben" angezeigt wird.
+ */
+export function cleanSubMotionTitle(rawTitle: string): string {
+  if (!rawTitle) return '';
+  let clean = rawTitle;
+  // Entferne nachgestellte Autoren wie " – Simon", " - Katharina Nigg", etc.
+  clean = clean.replace(/\s*[\-–]\s*[A-ZÄÖÜa-zäöüß\s.\-]+$/, '');
+  // Entferne (XX), (XXX), (?), (offen), etc.
+  clean = clean.replace(/\s*\([xX\?\s\-]+\)/gi, '');
+  // Entferne Klammern, die einen Personennamen enthalten (nicht aber FP oder Zeilenbezug)
+  clean = clean.replace(/\s*\((?!(?:zu\s+|zur\s+)?(?:fp|forderungspunkt|zeile|z\.|§)\b)[^)]+\)/gi, '');
+  // Vereinheitliche "zu/zur FP X" zu "(FP X)" falls noch nicht in Klammern
+  clean = clean.replace(/\b(?:zu|zur)\s+(fp|forderungspunkt|zeile|z\.|§)\s*(\d+)\b/gi, '($1 $2)');
+  // Doppelpunkt, Bindestrich oder Leerzeichen am Ende entfernen
+  clean = clean.replace(/[:\-–\s]+$/, '');
+  return clean.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Normalisiert Antragstitel für den intelligenten Abgleich zwischen
  * SiP-Antragsmappe und Strategie-Dokument.
  */
@@ -625,9 +646,9 @@ export function parseStrategieText(rawText: string): {
       const shortType = detectedType === 'AAA' ? 'ÄA' : detectedType;
       const numSuffixMatch = subMatch[1].match(/\d+/);
       const typeLabel = numSuffixMatch ? `${shortType} ${numSuffixMatch[0]}` : shortType;
-      const title = `${typeLabel}${lineOrParagraph ? ` (${lineOrParagraph})` : ''}${
-        claimedBy ? ` – ${claimedBy}` : ''
-      }`;
+      const cleanFp = lineOrParagraph ? lineOrParagraph.replace(/^(?:zu|zur)\s+/i, '').trim() : undefined;
+      // Titel enthält NUR den Typ & den Forderungspunktbezug – NIEMALS Personennamen oder "(XX)"
+      const title = cleanSubMotionTitle(cleanFp ? `${typeLabel} (${cleanFp})` : typeLabel);
 
       currentSection.subAntraege.push({
         type: detectedType,
@@ -843,20 +864,23 @@ export function combineAntragsmappeAndStrategie(
       h.author && h.author !== 'Schüler:innenparlament'
         ? h.author
         : strategyAuthor || h.author;
-    const finalContent =
-      h.content && h.content.length > 20
-        ? h.content
-        : strategyNotesForMotion
-        ? `Strategie: ${strategyNotesForMotion}`
-        : h.content;
+    // Antragstext wird strikt aus der SiP-Antragsmappe übernommen, NIEMALS die Strategie als Antragstext!
+    let finalContent = h.content?.trim() || '';
+    if (!finalContent && finalFps.length > 0) {
+      finalContent =
+        `Daher fordert das Vorarlberger Schüler:innenparlament:\n` +
+        finalFps.map((fp, idx) => `${idx + 1}. ${fp}`).join('\n');
+    } else if (!finalContent) {
+      finalContent = 'Antragstext siehe SiP-Antragsmappe';
+    }
 
     const mainMotion: SipAntrag = {
       id: hauptAntragId,
       type: 'HAUPTANTRAG',
       title: h.cleanTitle,
       author: finalAuthor,
-      rede: finalContent,
-      content: finalContent,
+      rede: finalContent,       // Echter Antragstext aus der SiP-Antragsmappe
+      content: finalContent,    // Echter Antragstext aus der SiP-Antragsmappe
       forderungspunkte: finalFps,
       lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
       isPreFab: true,
@@ -875,7 +899,8 @@ export function combineAntragsmappeAndStrategie(
           id: `antrag_sub_${hIdx + 1}_${subCounter++}`,
           parentAntragId: hauptAntragId,
           type: sub.type,
-          title: sub.title,
+          // Titel bereinigen: keine Namen oder "(XX)" im Titel
+          title: cleanSubMotionTitle(sub.title),
           content: sub.content,
           lineOrParagraph: sub.lineOrParagraph || h.lineOrParagraph,
           author: sub.author || 'Delegierte:r',
@@ -892,7 +917,6 @@ export function combineAntragsmappeAndStrategie(
   });
 
   // 2. Falls in den Strategiedateien Anträge vorhanden sind, die nicht in der Antragsmappe standen
-  // (oder falls die Antragsmappe nur ein Vorwort war und die Anträge inkl. Forderungspunkten in den Strategiedateien stehen)
   sections.forEach((sec, sIdx) => {
     if (
       sec.motionTitle === 'Allgemeine Strategieanträge' &&
@@ -914,19 +938,12 @@ export function combineAntragsmappeAndStrategie(
         ? sec.motionTitle
         : `Antrag ${motionNum}: ${cleanSecTitle}`;
 
-      const contentParts: string[] = [];
-      if (sec.notes) {
-        contentParts.push(`Strategie: ${sec.notes}`);
-      }
-      if (sec.forderungspunkte && sec.forderungspunkte.length > 0) {
-        contentParts.push(
-          `Daher fordert das Vorarlberger Schüler:innenparlament:\n` +
-            sec.forderungspunkte.map((fp, idx) => `${idx + 1}. ${fp}`).join('\n')
-        );
-      }
-
+      // Antragstext darf NIEMALS aus den internen Strategie-Notizen bestehen
       const extraContent =
-        contentParts.join('\n\n') || `Hauptantrag zu ${cleanSecTitle} aus Strategieunterlagen`;
+        sec.forderungspunkte && sec.forderungspunkte.length > 0
+          ? `Daher fordert das Vorarlberger Schüler:innenparlament:\n` +
+            sec.forderungspunkte.map((fp, idx) => `${idx + 1}. ${fp}`).join('\n')
+          : `Antragstext siehe SiP-Antragsmappe`;
 
       const extraMain: SipAntrag = {
         id: extraHauptId,
@@ -951,7 +968,8 @@ export function combineAntragsmappeAndStrategie(
           id: `antrag_sub_extra_${sIdx + 1}_${subIdx + 1}`,
           parentAntragId: extraHauptId,
           type: sub.type,
-          title: sub.title,
+          // Titel bereinigen: keine Namen oder "(XX)" im Titel
+          title: cleanSubMotionTitle(sub.title),
           content: sub.content,
           lineOrParagraph: sub.lineOrParagraph || `Antrag ${motionNum}`,
           author: sub.author || 'Delegierte:r',

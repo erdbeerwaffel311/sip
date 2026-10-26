@@ -18,6 +18,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
+import { cleanSubMotionTitle } from '../utils/sipAutoImporter';
 
 interface AntragCardProps {
   antrag: SipAntrag;
@@ -184,7 +185,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
           </div>
 
           <h3 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
-            {antrag.title}
+            {antrag.type !== 'HAUPTANTRAG' ? cleanSubMotionTitle(antrag.title) : antrag.title}
           </h3>
 
           {/* Main Content Area: 2-line snippet by default, expandable */}

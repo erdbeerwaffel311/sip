@@ -709,6 +709,13 @@ class SipRealtimeService {
     this.currentSession = {
       ...this.currentSession,
       activeAntragId: null,
+      voteRecommendation: {
+        type: 'KEINE',
+        note: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Strategieführung',
+        isPublished: false,
+      },
       antraege: this.currentSession.antraege.map((a) => ({
         ...a,
         isActive: false,

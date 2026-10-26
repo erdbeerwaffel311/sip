@@ -55,6 +55,7 @@ import { MemeFeedTab } from './MemeFeedTab';
 import { StrategyNotesTab } from './StrategyNotesTab';
 import { SipArchiveView } from './SipArchiveView';
 import { downloadSipProtocol } from '../utils/protocolExporter';
+import { cleanSubMotionTitle } from '../utils/sipAutoImporter';
 
 interface PastAntragCardProps {
   hauptAntrag: SipAntrag;
@@ -253,7 +254,7 @@ export const PastAntragCard: React.FC<PastAntragCardProps> = ({
                             </span>
                           )}
                           <span className="font-semibold text-slate-200">
-                            {sub.title}
+                            {cleanSubMotionTitle(sub.title)}
                           </span>
                         </div>
                         <p className="text-slate-400 text-xs line-clamp-2">
@@ -446,6 +447,21 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
       handleClearActiveAntrag();
     }
   }, [isStrategieLeader, activeAntrag?.plenumResult, isDecisionExpired]);
+
+  // Sobald ein Antrag ausgefadet ist (oder kein aktiver Antrag vorhanden ist),
+  // wird auch die Abstimmungsempfehlung sofort auf 'KEINE' zurückgesetzt.
+  const effectiveRecommendation = useMemo(() => {
+    if (activeAntrag?.plenumResult && isDecisionExpired) {
+      return {
+        type: 'KEINE' as const,
+        note: '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Strategieführung',
+        isPublished: false,
+      };
+    }
+    return session.voteRecommendation;
+  }, [activeAntrag?.plenumResult, isDecisionExpired, session.voteRecommendation]);
 
   // 1. Hauptanträge im Plenum (nur Typ HAUPTANTRAG, die noch nicht entschieden/ausgefadet sind)
   const hauptAntraege = useMemo(() => {
@@ -948,7 +964,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
       {/* Prominent Vote Recommendation Banner (Always visible in Plenum) */}
       <VoteRecommendationBanner
-        recommendation={session.voteRecommendation}
+        recommendation={effectiveRecommendation}
         isStrategieLeader={isStrategieLeader}
         onUpdateRecommendation={handleVoteRecommendationUpdate}
       />

@@ -5,12 +5,8 @@ import {
   LogOut,
   Star,
 } from 'lucide-react';
-import {
-  AppSettings,
-  DEFAULT_SIP_SETTINGS,
-  isAccountExpired,
-  MemberAccount,
-} from './types';
+import { AppSettings, DEFAULT_SIP_SETTINGS, isAccountExpired, MemberAccount } from './types';
+import suLogo from './assets/su-logo.png';
 import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
@@ -250,7 +246,7 @@ export const App: React.FC = () => {
           >
             <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-lg shrink-0">
               <img
-                src="./su-logo.png"
+                src={suLogo}
                 alt="Schülerunion Vorarlberg"
                 className="w-full h-full object-contain"
               />

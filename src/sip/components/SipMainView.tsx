@@ -56,6 +56,7 @@ import { StrategyNotesTab } from './StrategyNotesTab';
 import { SipArchiveView } from './SipArchiveView';
 import { downloadSipProtocol } from '../utils/protocolExporter';
 import { cleanSubMotionTitle } from '../utils/sipAutoImporter';
+import suLogo from '../../assets/su-logo.png';
 
 interface PastAntragCardProps {
   hauptAntrag: SipAntrag;
@@ -844,8 +845,12 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
       {/* Top Banner / SiP Control Bar */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl backdrop-blur flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 shrink-0">
-            <Gavel className="w-6 h-6" />
+          <div className="w-12 h-12 rounded-2xl bg-white p-1.5 flex items-center justify-center shadow-lg shrink-0">
+            <img
+              src={suLogo}
+              alt="Schülerunion Vorarlberg"
+              className="w-full h-full object-contain"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">

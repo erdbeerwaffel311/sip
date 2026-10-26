@@ -12,6 +12,7 @@ import {
   MemberAccount,
   normalizeUsernameForComparison,
 } from '../types';
+import suLogo from '../assets/su-logo.png';
 
 interface SipLoginViewProps {
   memberAccounts: MemberAccount[];
@@ -122,7 +123,7 @@ export const SipLoginView: React.FC<SipLoginViewProps> = ({
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-20 h-20 rounded-2xl bg-white p-2 shadow-xl shadow-sky-500/10 flex items-center justify-center mb-3">
             <img
-              src="./su-logo.png"
+              src={suLogo}
               alt="Schülerunion Vorarlberg Logo"
               className="w-full h-full object-contain"
             />

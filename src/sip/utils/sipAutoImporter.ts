@@ -583,6 +583,16 @@ async function extractTextFromSingleStrategieFile(
   return text;
 }
 
+export interface AutoImportProgress {
+  percent: number;
+  currentMotionNumber?: number;
+  totalMotions?: number;
+  motionTitle?: string;
+  statusText: string;
+}
+
+export type AutoImportProgressCallback = (progress: AutoImportProgress) => void;
+
 export interface AutoImportOptions {
   files?: File[] | FileList;
   antragsmappeFile?: File | ArrayBuffer;
@@ -590,6 +600,7 @@ export interface AutoImportOptions {
   strategieFile?: File | ArrayBuffer;
   strategieFiles?: (File | ArrayBuffer)[];
   strategieText?: string;
+  onProgress?: AutoImportProgressCallback;
 }
 
 /**
@@ -597,9 +608,9 @@ export interface AutoImportOptions {
  * Unterstützt:
  * 1. Freigegebenen Google Drive-Ordner (alle Dateien auf einmal via webkitdirectory oder Drag & Drop)
  * 2. Antragsmappe PDF + Unterordner "Strategie" (einzelne oder mehrere DOCX-Dateien)
- * 3. Automatische Verknüpfung von Antragstext & Strategie nach gleichem Titel
+ * 3. Schritt-für-Schritt-Zusammensetzen (1. Antrag + 1. Strategie, 2. Antrag + 2. Strategie, ...) mit Ladebalken
  * 4. Automatischer Ausschluss der Geschäftsordnung (GO) am Ende der Antragsmappe
- * 5. Vollzugsmeldung ("Alles bereit fürs Plenum!")
+ * 5. Vollzugsmeldung ("Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!")
  */
 export async function executeAutoSiPImport(options: AutoImportOptions): Promise<AutoImportResult> {
   let finalAntragsmappeText = options.antragsmappeText || '';
@@ -607,6 +618,11 @@ export async function executeAutoSiPImport(options: AutoImportOptions): Promise<
 
   let targetAntragsmappe = options.antragsmappeFile;
   const targetStrategieFiles: (File | ArrayBuffer)[] = [];
+
+  options.onProgress?.({
+    percent: 5,
+    statusText: 'Dateien werden identifiziert und vorbereitet...',
+  });
 
   // Wenn ein Ordner oder eine Liste von Dateien übergeben wurde
   if (options.files && options.files.length > 0) {
@@ -625,6 +641,11 @@ export async function executeAutoSiPImport(options: AutoImportOptions): Promise<
   if (options.strategieFiles && options.strategieFiles.length > 0) {
     targetStrategieFiles.push(...options.strategieFiles);
   }
+
+  options.onProgress?.({
+    percent: 15,
+    statusText: 'Extrahiere Antragsmappe (PDF) und Strategiedateien...',
+  });
 
   // 1. Text aus PDF-Antragsmappe extrahieren
   if (targetAntragsmappe) {
@@ -661,34 +682,153 @@ export async function executeAutoSiPImport(options: AutoImportOptions): Promise<
     }
   }
 
-  // 3. Zusammenführen: Antragsmappe + Strategien
-  const { antraege, strategyNotes, summary } = combineAntragsmappeAndStrategie(
-    finalAntragsmappeText,
-    finalStrategieText
-  );
+  // 3. Texte parsen (Antragsmappe ohne GO & Strategie)
+  options.onProgress?.({
+    percent: 25,
+    statusText: 'Hauptanträge und Strategien werden analysiert...',
+  });
 
-  const goNote = summary.goExcluded
-    ? ' Die Geschäftsordnung am Ende der Antragsmappe wurde wie gewünscht ignoriert.'
-    : '';
+  const { hauptAntraege, goExcluded } = parseAntragsmappeText(finalAntragsmappeText);
+  const { sections, generalStrategyNotes } = parseStrategieText(finalStrategieText);
 
-  const filesNote =
-    targetStrategieFiles.length > 1
-      ? ` aus ${targetStrategieFiles.length} Strategiedateien`
-      : '';
+  const total = hauptAntraege.length;
+  const resultAntraege: SipAntrag[] = [];
+  const matchedSectionTitles = new Set<string>();
+  const baseTimestamp = Date.now();
+
+  // 4. Schritt-für-Schritt Zusammensetzen: Antrag für Antrag
+  // (1. Antrag + 1. Strategie, 2. Antrag + 2. Strategie, ...)
+  for (let hIdx = 0; hIdx < hauptAntraege.length; hIdx++) {
+    const h = hauptAntraege[hIdx];
+    const motionNum = hIdx + 1;
+    const progressPercent = Math.min(95, Math.round(25 + ((hIdx + 1) / Math.max(1, total)) * 70));
+
+    if (options.onProgress) {
+      options.onProgress({
+        percent: progressPercent,
+        currentMotionNumber: motionNum,
+        totalMotions: total,
+        motionTitle: h.cleanTitle,
+        statusText: `Lade ${motionNum}. Antrag & ${motionNum}. Strategie: "${h.cleanTitle}"...`,
+      });
+      // Visuelles Delay pro Antrag für den Ladebalken
+      await new Promise((r) => setTimeout(r, 60));
+    }
+
+    const hauptAntragId = `antrag_${hIdx + 1}`;
+    const mainMotion: SipAntrag = {
+      id: hauptAntragId,
+      type: 'HAUPTANTRAG',
+      title: h.cleanTitle,
+      author: h.author,
+      rede: h.content,
+      content: h.content,
+      forderungspunkte: h.forderungspunkte,
+      lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
+      isPreFab: true,
+      status: 'approved',
+      claimedBy: null,
+      claimedAt: null,
+      isActive: false,
+      createdAt: new Date(baseTimestamp + hIdx * 1000).toISOString(),
+    };
+    resultAntraege.push(mainMotion);
+
+    // Passende Strategie-Sektion zum Hauptantrag finden & verknüpfen
+    const matchingSection = sections.find((s) => isTitleMatching(s.motionTitle, h.cleanTitle));
+    if (matchingSection) {
+      matchedSectionTitles.add(matchingSection.motionTitle);
+      matchingSection.subAntraege.forEach((sub, sIdx) => {
+        const subMotion: SipAntrag = {
+          id: `antrag_sub_${hIdx + 1}_${sIdx + 1}`,
+          parentAntragId: hauptAntragId,
+          type: sub.type,
+          title: sub.title,
+          content: sub.content,
+          lineOrParagraph: sub.lineOrParagraph || h.lineOrParagraph,
+          author: sub.author || 'Delegierte:r',
+          claimedBy: sub.claimedBy || null,
+          claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+          isPreFab: true,
+          status: 'approved',
+          isActive: false,
+          createdAt: new Date(baseTimestamp + hIdx * 1000 + (sIdx + 1) * 100).toISOString(),
+        };
+        resultAntraege.push(subMotion);
+      });
+    }
+  }
+
+  // 5. Zusätzliche Strategie-Anträge, die keinem Hauptantrag der Mappe zugeordnet waren
+  sections.forEach((sec, sIdx) => {
+    if (!matchedSectionTitles.has(sec.motionTitle) && sec.subAntraege.length > 0) {
+      const extraHauptId = `antrag_extra_${sIdx + 1}`;
+      const extraMain: SipAntrag = {
+        id: extraHauptId,
+        type: 'HAUPTANTRAG',
+        title: sec.motionTitle.startsWith('Antrag') ? sec.motionTitle : `Antrag: ${sec.motionTitle}`,
+        author: 'Schüler:innenparlament',
+        content: `Hauptantrag zu ${sec.motionTitle} aus Strategieunterlagen`,
+        forderungspunkte: [],
+        lineOrParagraph: `Antrag ${hauptAntraege.length + sIdx + 1}`,
+        isPreFab: true,
+        status: 'approved',
+        claimedBy: null,
+        claimedAt: null,
+        isActive: false,
+        createdAt: new Date(baseTimestamp + (hauptAntraege.length + sIdx) * 1000).toISOString(),
+      };
+      resultAntraege.push(extraMain);
+
+      sec.subAntraege.forEach((sub, subIdx) => {
+        resultAntraege.push({
+          id: `antrag_sub_extra_${sIdx + 1}_${subIdx + 1}`,
+          parentAntragId: extraHauptId,
+          type: sub.type,
+          title: sub.title,
+          content: sub.content,
+          lineOrParagraph: sub.lineOrParagraph,
+          author: sub.author || 'Delegierte:r',
+          claimedBy: sub.claimedBy || null,
+          claimedAt: sub.claimedBy ? new Date().toISOString() : null,
+          isPreFab: true,
+          status: 'approved',
+          isActive: false,
+          createdAt: new Date(baseTimestamp + (hauptAntraege.length + sIdx) * 1000 + (subIdx + 1) * 100).toISOString(),
+        });
+      });
+    }
+  });
+
+  const subCount = resultAntraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
+  const hauptCount = resultAntraege.filter((a) => a.type === 'HAUPTANTRAG').length;
+
+  // 6. Abschlussmeldung: "Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!"
+  if (options.onProgress) {
+    options.onProgress({
+      percent: 100,
+      currentMotionNumber: hauptCount,
+      totalMotions: hauptCount,
+      statusText: 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!',
+    });
+  }
 
   const message =
-    antraege.length > 0
-      ? `✅ Alles bereit fürs Plenum! ${summary.hauptAntraegeCount} Hauptanträge und ${summary.subAntraegeCount} dazugehörige Nebenanträge wurden${filesNote} erfolgreich kombiniert und importiert.${goNote}`
+    resultAntraege.length > 0
+      ? 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!'
       : 'Es konnten keine Anträge aus den bereitgestellten Dateien oder Texten extrahiert werden. Bitte prüfe, ob die PDF-Antragsmappe ausgewählt wurde.';
 
   return {
-    success: antraege.length > 0,
+    success: resultAntraege.length > 0,
     message,
-    antraege,
-    strategyNotes,
+    antraege: resultAntraege,
+    strategyNotes: generalStrategyNotes,
     summary: {
-      ...summary,
+      hauptAntraegeCount: hauptCount,
+      subAntraegeCount: subCount,
+      matchedSectionsCount: matchedSectionTitles.size,
       strategyFilesCount: targetStrategieFiles.length,
+      goExcluded,
     },
   };
 }

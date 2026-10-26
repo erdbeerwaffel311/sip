@@ -182,19 +182,7 @@ export const DEFAULT_SIP_SESSION: SipSession = {
     isPublished: false,
   },
   antraege: REAL_SIP_ANTRAEGE,
-  memes: [
-    {
-      id: 'meme_1',
-      author: 'Strategieführung',
-      imageUrl: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=600&auto=format&fit=crop&q=80',
-      caption: 'Wenn der Antrag auf Ende der Debatte endlich durchgeht nach 3 Stunden Diskussion ☕️',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      reactions: {
-        '😂': ['Simon Märker', 'Celil-Kaan Beler'],
-        '🔥': ['Strategieführung'],
-      },
-    },
-  ],
+  memes: [],
   activityLog: [],
   updatedAt: '2026-01-01T00:00:00.000Z',
 };

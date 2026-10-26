@@ -174,7 +174,7 @@ class SipRealtimeService {
       activeAntragId: activeId,
       voteRecommendation: session.voteRecommendation || DEFAULT_SIP_SESSION.voteRecommendation,
       antraege: [...customAntraege, ...refreshedPreFabs],
-      memes: session.memes && session.memes.length > 0 ? session.memes : DEFAULT_SIP_SESSION.memes,
+      memes: Array.isArray(session.memes) ? session.memes.filter((m) => m.id !== 'meme_1') : [],
     };
   }
 

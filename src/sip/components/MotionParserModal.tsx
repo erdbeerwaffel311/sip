@@ -17,6 +17,7 @@ import {
   executeAutoSiPImport,
   classifySiPFolderFiles,
   AutoImportResult,
+  AutoImportProgress,
 } from '../utils/sipAutoImporter';
 
 interface MotionParserModalProps {
@@ -34,6 +35,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
   const [strategieFiles, setStrategieFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,6 +47,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   async function handleFolderSelect(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setIsProcessing(true);
+    setImportProgress({ percent: 5, statusText: 'Lese SiP-Ordner ein...' });
     try {
       const classified = classifySiPFolderFiles(files);
       if (classified.antragsmappeFile) {
@@ -53,7 +56,10 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
       if (classified.strategieFiles.length > 0) {
         setStrategieFiles(classified.strategieFiles);
       }
-      const res = await executeAutoSiPImport({ files });
+      const res = await executeAutoSiPImport({
+        files,
+        onProgress: (p) => setImportProgress(p),
+      });
       setAutoResult(res);
     } catch (err) {
       console.error('Fehler beim Ordner-Import:', err);
@@ -74,14 +80,17 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 
     if (!targetMappe && targetStrats.length === 0) {
       setAutoResult(null);
+      setImportProgress(null);
       return;
     }
 
     setIsProcessing(true);
+    setImportProgress({ percent: 5, statusText: 'Lese Dateien ein...' });
     try {
       const res = await executeAutoSiPImport({
         antragsmappeFile: targetMappe || undefined,
         strategieFiles: targetStrats.length > 0 ? targetStrats : undefined,
+        onProgress: (p) => setImportProgress(p),
       });
       setAutoResult(res);
     } catch (err) {
@@ -259,24 +268,52 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                 </div>
               </div>
 
-              {isProcessing && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300">
-                  <Sparkles className="w-4 h-4 animate-spin shrink-0" />
-                  <span>Dateien werden extrahiert und Anträge kombiniert...</span>
+              {/* Ladebalken während des Uploads / Imports */}
+              {isProcessing && importProgress && (
+                <div className="p-4 rounded-2xl bg-slate-900 border border-purple-500/40 space-y-2.5 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-purple-400 animate-spin" />
+                      <span>
+                        {importProgress.currentMotionNumber
+                          ? `Lade Antrag ${importProgress.currentMotionNumber} von ${importProgress.totalMotions}...`
+                          : 'Upload läuft...'}
+                      </span>
+                    </span>
+                    <span className="font-mono font-bold text-white bg-purple-900/60 px-2 py-0.5 rounded-lg border border-purple-500/30">
+                      {importProgress.percent}%
+                    </span>
+                  </div>
+
+                  {/* Ladebalken */}
+                  <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5 shadow-inner">
+                    <div
+                      className="bg-gradient-to-r from-purple-500 via-sky-500 to-emerald-400 h-full rounded-full transition-all duration-200 ease-out shadow-sm shadow-purple-500/50"
+                      style={{ width: `${importProgress.percent}%` }}
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 truncate" title={importProgress.statusText}>
+                    {importProgress.statusText}
+                  </p>
                 </div>
               )}
 
-              {autoResult && (
+              {autoResult && !isProcessing && (
                 <div
-                  className={`p-4 rounded-2xl border text-xs leading-relaxed space-y-2 ${
+                  className={`p-4 rounded-2xl border text-xs leading-relaxed space-y-2.5 animate-in fade-in ${
                     autoResult.success
-                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-200'
                       : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
                   }`}
                 >
                   <div className="flex items-center gap-2 font-bold text-sm text-emerald-300">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                    <span>Alles bereit für das Plenum!</span>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span>
+                      {autoResult.success
+                        ? 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!'
+                        : 'Hinweis beim Import:'}
+                    </span>
                   </div>
                   <p className="text-xs text-slate-200">{autoResult.message}</p>
 

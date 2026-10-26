@@ -29,6 +29,7 @@ import {
   executeAutoSiPImport,
   classifySiPFolderFiles,
   AutoImportResult,
+  AutoImportProgress,
 } from '../utils/sipAutoImporter';
 
 /**
@@ -94,6 +95,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
   const [strategieFiles, setStrategieFiles] = useState<File[]>([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -157,6 +159,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   async function handleFolderSelect(files: FileList | File[] | null) {
     if (!files || files.length === 0) return;
     setIsProcessingFiles(true);
+    setImportProgress({ percent: 5, statusText: 'Lese SiP-Ordner ein...' });
     try {
       const classified = classifySiPFolderFiles(files);
       if (classified.antragsmappeFile) {
@@ -165,7 +168,10 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
       if (classified.strategieFiles.length > 0) {
         setStrategieFiles(classified.strategieFiles);
       }
-      const res = await executeAutoSiPImport({ files });
+      const res = await executeAutoSiPImport({
+        files,
+        onProgress: (p) => setImportProgress(p),
+      });
       setImportResult(res);
     } catch (err) {
       console.error('Fehler beim automatischen Ordner-Import:', err);
@@ -186,14 +192,17 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
 
     if (!targetMappe && targetStrats.length === 0) {
       setImportResult(null);
+      setImportProgress(null);
       return;
     }
 
     setIsProcessingFiles(true);
+    setImportProgress({ percent: 5, statusText: 'Lese Dateien ein...' });
     try {
       const res = await executeAutoSiPImport({
         antragsmappeFile: targetMappe || undefined,
         strategieFiles: targetStrats.length > 0 ? targetStrats : undefined,
+        onProgress: (p) => setImportProgress(p),
       });
       setImportResult(res);
     } catch (err) {
@@ -226,6 +235,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
       setStrategieFiles([]);
       const importedMsg = importResult ? `\n\n${importResult.message}` : '';
       setImportResult(null);
+      setImportProgress(null);
       await loadArchives();
       alert(
         `Neues SiP "${newSessionTitle.trim()}" gestartet!\n${
@@ -571,28 +581,57 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                   </div>
                 </div>
 
-                {/* Import Status Alert */}
-                {isProcessingFiles && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300">
-                    <Sparkles className="w-4 h-4 animate-spin shrink-0" />
-                    <span>Dateien werden extrahiert, analysiert und Titel abgeglichen...</span>
+                {/* Ladebalken während des Uploads / Imports */}
+                {isProcessingFiles && importProgress && (
+                  <div className="p-4 rounded-2xl bg-slate-900/90 border border-purple-500/40 space-y-2.5 animate-in fade-in">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-purple-300 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-purple-400 animate-spin" />
+                        <span>
+                          {importProgress.currentMotionNumber
+                            ? `Lade Antrag ${importProgress.currentMotionNumber} von ${importProgress.totalMotions}...`
+                            : 'Upload läuft...'}
+                        </span>
+                      </span>
+                      <span className="font-mono font-bold text-white bg-purple-900/60 px-2 py-0.5 rounded-lg border border-purple-500/30">
+                        {importProgress.percent}%
+                      </span>
+                    </div>
+
+                    {/* Ladebalken */}
+                    <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-800 p-0.5 shadow-inner">
+                      <div
+                        className="bg-gradient-to-r from-purple-500 via-sky-500 to-emerald-400 h-full rounded-full transition-all duration-200 ease-out shadow-sm shadow-purple-500/50"
+                        style={{ width: `${importProgress.percent}%` }}
+                      />
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 truncate" title={importProgress.statusText}>
+                      {importProgress.statusText}
+                    </p>
                   </div>
                 )}
 
-                {importResult && (
+                {/* Erfolgsmeldung nach Upload */}
+                {importResult && !isProcessingFiles && (
                   <div
-                    className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-2.5 ${
+                    className={`p-4 rounded-2xl border text-xs leading-relaxed flex items-start gap-3 animate-in fade-in ${
                       importResult.success
-                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-200'
                         : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
                     }`}
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold block mb-0.5">
-                        {importResult.success ? 'Erfolgreich vorbereitet!' : 'Hinweis:'}
+                    <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="font-black text-sm text-emerald-300 block">
+                        {importResult.success
+                          ? 'Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!'
+                          : 'Hinweis beim Import:'}
                       </span>
-                      <span>{importResult.message}</span>
+                      <span className="text-slate-300 block">
+                        {importResult.summary.hauptAntraegeCount} Hauptanträge und {importResult.summary.subAntraegeCount} Nebenanträge wurden zusammengesteckt.
+                        {importResult.summary.goExcluded && ' Die Geschäftsordnung am Schluss wurde automatisch ignoriert.'}
+                      </span>
                     </div>
                   </div>
                 )}

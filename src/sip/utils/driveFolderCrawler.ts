@@ -527,10 +527,10 @@ export async function executeOnlineDriveImport(
       statusText: 'Verarbeite manuell hochgeladene Antragsmappe...',
     });
     try {
-      antragsmappeText = await extractTextFromPdfArrayBuffer(manualPdfBuffer);
+      antragsmappeText = await extractTextFromPdfArrayBuffer(manualPdfBuffer.slice(0));
     } catch (pdfErr) {
       console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
-      antragsmappeText = await extractTextFromDocxArrayBuffer(manualPdfBuffer);
+      antragsmappeText = await extractTextFromDocxArrayBuffer(manualPdfBuffer.slice(0));
     }
     const { hauptAntraege } = parseAntragsmappeText(antragsmappeText);
     const hauptantraege = hauptAntraege;

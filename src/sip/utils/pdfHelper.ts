@@ -29,8 +29,11 @@ if (typeof window !== 'undefined') {
 }
 
 export async function extractTextFromPdfArrayBuffer(buffer: ArrayBuffer): Promise<string> {
+  // Sicherheits-Clone des Buffers, damit pdfjs-dist beim Transfer an den Web-Worker
+  // keinesfalls den Originalbuffer im Hauptthread detached
+  const safeBuffer = buffer.byteLength > 0 ? buffer.slice(0) : buffer;
   const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(buffer),
+    data: new Uint8Array(safeBuffer),
     useSystemFonts: true,
   });
   const pdf = await loadingTask.promise;

@@ -96,7 +96,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     try {
       // 1. Wandle in ArrayBuffer um und nutze denselben PDF-Parser (parseAntragsmappeText)
       const arrayBuffer = await file.arrayBuffer();
-      const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer);
+      const pdfText = await extractTextFromPdfArrayBuffer(arrayBuffer.slice(0));
       const { hauptAntraege } = parseAntragsmappeText(pdfText);
       const hauptantraege = hauptAntraege;
 
@@ -126,7 +126,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
       setImportProgress({ percent: 45, statusText: 'Lade zugehörige Strategiedateien (DOCX) aus Google Drive...' });
       const importResult = await executeOnlineDriveImport({
         folderUrlOrId: driveUrlInput.trim(),
-        manualPdfBuffer: arrayBuffer,
+        manualPdfBuffer: arrayBuffer.slice(0),
         cachedManifest: pendingManifest || undefined,
         onProgress: (p) => setImportProgress(p),
       });

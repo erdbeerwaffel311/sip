@@ -1064,7 +1064,7 @@ export function createHauptantraegeFromParsed(
     lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
     targetMotionNumber: h.index || hIdx + 1,
     targetMotionTitle: h.cleanTitle,
-    isPreFab: true,
+    isPreFab: false,
     status: 'approved' as const,
     claimedBy: null,
     claimedAt: null,
@@ -1138,7 +1138,7 @@ export function createNebenantraegeFromExtracted(
       author: sub.author || 'Delegierte:r',
       claimedBy: sub.claimedBy || null,
       claimedAt: sub.claimedBy ? new Date().toISOString() : null,
-      isPreFab: true,
+      isPreFab: false,
       status: 'approved' as const,
       isActive: false,
       createdAt: new Date(baseTimestamp + parentOrderIndex * 1000 + subIdx * 100).toISOString(),
@@ -1169,6 +1169,7 @@ export function mergeHauptAndNebenantraege(
     orderIndex: h.orderIndex ?? hIdx,
     text: h.text || h.content,
     content: h.content || h.text || '',
+    isPreFab: false,
   }));
 
   const subCounterPerParent: Record<string, number> = {};
@@ -1217,6 +1218,7 @@ export function mergeHauptAndNebenantraege(
       content: fullText,
       text: fullText,
       lineOrParagraph: sub.lineOrParagraph || parent?.lineOrParagraph,
+      isPreFab: false,
       createdAt:
         sub.createdAt || new Date(baseTimestamp + parentOrderIndex * 1000 + subIdx * 100).toISOString(),
     };

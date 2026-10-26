@@ -515,7 +515,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
   // Im Warteraum während der Pause: Nebenanträge zu vergangenen Hauptanträgen nicht aufscheinen lassen
   const warteraumAntraege = useMemo(() => {
     return session.antraege.filter((a) => {
-      if (a.isPreFab) return false;
+      if (a.isPreFab || !a.id.startsWith('antrag_custom_')) return false;
       // Nebenanträge zu vergangenen Hauptanträgen während der Pause ausblenden:
       if (a.parentAntragId || a.type !== 'HAUPTANTRAG') return false;
       return true;
@@ -531,29 +531,32 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     );
 
     return [...subs].sort((a, b) => {
+      const aIsCustom = !a.isPreFab && a.id.startsWith('antrag_custom_');
+      const bIsCustom = !b.isPreFab && b.id.startsWith('antrag_custom_');
+
       if (isStrategieLeader) {
         // 1. Strategieführung sieht von Mitgliedern eigens eingereichte Nebenanträge IMMER ganz oben
-        if (!a.isPreFab && b.isPreFab) return -1;
-        if (a.isPreFab && !b.isPreFab) return 1;
-        if (!a.isPreFab && !b.isPreFab) {
+        if (aIsCustom && !bIsCustom) return -1;
+        if (!aIsCustom && bIsCustom) return 1;
+        if (aIsCustom && bIsCustom) {
           return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         }
-        return 0;
+        return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
       } else {
         // 2. Wenn ein Mitglied einen eigenen Nebenantrag stellt, soll dieser beim jeweiligen Mitglied ganz oben aufscheinen
-        const aIsMine = !a.isPreFab && a.author === currentUserName;
-        const bIsMine = !b.isPreFab && b.author === currentUserName;
+        const aIsMine = aIsCustom && a.author === currentUserName;
+        const bIsMine = bIsCustom && b.author === currentUserName;
         if (aIsMine && !bIsMine) return -1;
         if (!aIsMine && bIsMine) return 1;
 
         // Danach eigens eingereichte Anträge anderer Mitglieder
-        if (!a.isPreFab && b.isPreFab) return -1;
-        if (a.isPreFab && !b.isPreFab) return 1;
+        if (aIsCustom && !bIsCustom) return -1;
+        if (!aIsCustom && bIsCustom) return 1;
 
-        if (!a.isPreFab && !b.isPreFab) {
+        if (aIsCustom && bIsCustom) {
           return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
         }
-        return 0;
+        return (a.orderIndex ?? 0) - (b.orderIndex ?? 0);
       }
     });
   }, [activeAntrag, session.antraege, isStrategieLeader, currentUserName]);

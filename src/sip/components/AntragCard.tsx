@@ -77,7 +77,10 @@ export const AntragCard: React.FC<AntragCardProps> = ({
       )}
 
       {/* Status banner for custom motions */}
-      {!antrag.isPreFab && (
+      {!antrag.isPreFab &&
+        (antrag.id.startsWith('antrag_custom_') ||
+          antrag.status !== 'approved' ||
+          antrag.isEditedByAdmin) && (
         <div className="mb-3">
           {antrag.status === 'pending_approval' ? (
             <div className="w-full bg-amber-500/15 border border-amber-500/30 p-2.5 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-300">

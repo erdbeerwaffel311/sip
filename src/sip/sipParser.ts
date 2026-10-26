@@ -143,7 +143,7 @@ export function convertParsedToSipAntraege(
     text: item.text || item.content,
     lineOrParagraph: item.lineOrParagraph,
     author: sourceLabel,
-    isPreFab: true,
+    isPreFab: false,
     status: 'approved',
     claimedBy: null,
     claimedAt: null,

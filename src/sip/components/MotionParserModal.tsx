@@ -8,11 +8,13 @@ import {
   Check,
   CheckCircle2,
   FolderOpen,
+  Upload,
+  AlertTriangle,
 } from 'lucide-react';
 import { SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
 import { AutoImportResult, AutoImportProgress } from '../utils/sipAutoImporter';
-import { executeOnlineDriveImport } from '../utils/driveFolderCrawler';
+import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
 
 interface MotionParserModalProps {
   onClose: () => void;
@@ -32,6 +34,9 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
+  const [manualUploadRequired, setManualUploadRequired] = useState(false);
+  const [pendingManifest, setPendingManifest] = useState<GoogleDriveFolderManifest | null>(null);
+  const [manualUploadFileName, setManualUploadFileName] = useState<string>('');
 
   // Raw Text Mode
   const [inputText, setInputText] = useState('');
@@ -45,6 +50,8 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     }
 
     setIsProcessing(true);
+    setManualUploadRequired(false);
+    setPendingManifest(null);
     setImportProgress({ percent: 5, statusText: 'Verbinde mit Google Drive...' });
     setAutoResult(null);
 
@@ -54,9 +61,50 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
         onProgress: (p) => setImportProgress(p),
       });
       setAutoResult(res);
+      setManualUploadRequired(false);
+      setPendingManifest(null);
     } catch (err: any) {
       console.error('Fehler beim Online-Drive-Import:', err);
-      alert(err.message || 'Fehler beim Abrufen der Google Drive Dokumente.');
+      if (
+        err.isDownloadBlocked ||
+        err.name === 'DriveDownloadBlockedError' ||
+        /403|408|blockier/i.test(err.message)
+      ) {
+        setManualUploadRequired(true);
+        if (err.manifest) {
+          setPendingManifest(err.manifest);
+        }
+        if (err.file?.name) {
+          setManualUploadFileName(err.file.name);
+        }
+        setImportProgress(null);
+      } else {
+        alert(err.message || 'Fehler beim Abrufen der Google Drive Dokumente.');
+        setImportProgress(null);
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function handleManualPdfSelected(file: File) {
+    if (!file) return;
+    setIsProcessing(true);
+    setImportProgress({ percent: 20, statusText: `Lese ${file.name} ein...` });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const res = await executeOnlineDriveImport({
+        folderUrlOrId: driveUrlInput.trim(),
+        manualPdfBuffer: arrayBuffer,
+        cachedManifest: pendingManifest || undefined,
+        onProgress: (p) => setImportProgress(p),
+      });
+      setAutoResult(res);
+      setManualUploadRequired(false);
+      setPendingManifest(null);
+    } catch (err: any) {
+      console.error('Fehler nach manuellem PDF-Upload:', err);
+      alert('Fehler beim Verarbeiten der hochgeladenen PDF-Datei: ' + (err?.message || err));
       setImportProgress(null);
     } finally {
       setIsProcessing(false);
@@ -183,6 +231,50 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                   Greift online direkt auf den freigegebenen Google Drive-Ordner zu. Das System lädt vollautomatisch die <strong>Antragsmappe (.pdf)</strong> und alle Strategiedateien aus dem Unterordner <strong>„Strategie“ (.docx)</strong> herunter. <em>Alle anderen Dateien und Ordner werden ignoriert.</em>
                 </p>
               </div>
+
+              {/* Fallback auf manuellen Upload (Der Lebensretter) */}
+              {manualUploadRequired && !autoResult && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/15 border-2 border-amber-500/50 text-amber-200 space-y-3 animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="font-bold text-sm sm:text-base text-amber-300">
+                        Google blockiert den automatischen Download der Antragsmappe. Bitte lade die Datei hier manuell hoch.
+                      </h4>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Google Drive verweigert den automatischen Browser-Download (Anti-Bot / HTTP 403).
+                        {manualUploadFileName ? ` Erwartet: „${manualUploadFileName}“. ` : ' '}
+                        Die Strategiedateien aus Google Drive werden anschließend automatisch mit der Mappe zusammengeführt.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-1">
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/50 hover:border-amber-400 bg-slate-950/80 hover:bg-slate-950 rounded-2xl p-5 cursor-pointer transition group shadow-inner">
+                      <Upload className="w-8 h-8 text-amber-400 mb-2 group-hover:scale-110 transition-transform" />
+                      <span className="text-xs sm:text-sm font-bold text-white mb-0.5">
+                        Antragsmappe (.pdf) auswählen
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        Hier klicken, um die Datei vom Rechner hochzuladen
+                      </span>
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            await handleManualPdfSelected(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
 
               {/* Ladebalken während des Uploads / Imports */}
               {isProcessing && importProgress && (

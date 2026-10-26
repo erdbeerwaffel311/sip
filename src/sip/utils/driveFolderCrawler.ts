@@ -392,10 +392,27 @@ export async function resolveDriveFolderManifest(
   );
 }
 
+export class DriveDownloadBlockedError extends Error {
+  file: DriveFileInfo;
+  status: number;
+  isDownloadBlocked = true;
+  manifest?: GoogleDriveFolderManifest;
+
+  constructor(file: DriveFileInfo, status: number, manifest?: GoogleDriveFolderManifest) {
+    super(
+      `Google blockiert den automatischen Download von "${file.name}" (HTTP ${status || 'CORS/403/408'}).`
+    );
+    this.name = 'DriveDownloadBlockedError';
+    this.file = file;
+    this.status = status;
+    this.manifest = manifest;
+  }
+}
+
 /**
- * Lädt eine Datei über Googles CDN herunter (mit robuster CORS-Proxy-Fallback-Kette)
+ * Lädt eine Datei über Googles CDN herunter (mit direktem Aufruf & robuster CORS-Proxy-Fallback-Kette)
  */
-async function downloadDriveFileAsArrayBuffer(
+export async function downloadDriveFileAsArrayBuffer(
   file: DriveFileInfo,
   onProgress?: (status: string) => void
 ): Promise<ArrayBuffer> {
@@ -411,13 +428,24 @@ async function downloadDriveFileAsArrayBuffer(
     ? `https://docs.google.com/document/d/${fileId}/export?format=docx`
     : 'https://drive.google.com/uc?export=download&id=' + fileId + '&confirm=t';
 
-  // Kette von verschiedenen CORS-Proxys gemäß Vorgabe
+  // Direkte CDN-Download-URL ohne Proxy (Stufe 1)
+  const directUserContentUrl = isGoogleDoc
+    ? `https://docs.google.com/document/d/${fileId}/export?format=docx`
+    : `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`;
+
+  // Kette von direkten Aufrufen und verschiedenen CORS-Proxys gemäß Vorgabe
   const proxyUrls: string[] = [
+    // 1. Direkter Aufruf ohne Proxy (hat früher am Tag funktioniert)
+    directUserContentUrl,
+    // 2. Neuer Proxy: api.codetabs.com
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(driveUrl),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(directUserContentUrl),
+    // 3. Fallback CORS-Proxys
     'https://corsproxy.io/?' + encodeURIComponent(driveUrl),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(driveUrl),
     'https://thingproxy.freeboard.io/fetch/' + encodeURIComponent(driveUrl),
-    // Fallback: Drive usercontent CDN & direkte URL
-    'https://corsproxy.io/?' + encodeURIComponent(`https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`),
+    'https://corsproxy.io/?' + encodeURIComponent(directUserContentUrl),
+    // 4. Direkte Drive-URL als Fallback
     driveUrl,
   ];
 
@@ -445,34 +473,41 @@ async function downloadDriveFileAsArrayBuffer(
     }
   }
 
-  throw new Error(
-    `Fehler beim Herunterladen von "${file.name}" (HTTP ${lastStatus}). Bitte prüfe, ob die Datei freigegeben ist.`
-  );
+  throw new DriveDownloadBlockedError(file, lastStatus);
+}
+
+export interface ExecuteOnlineDriveImportOptions {
+  folderUrlOrId: string;
+  onProgress?: AutoImportProgressCallback;
+  manualPdfBuffer?: ArrayBuffer;
+  cachedManifest?: GoogleDriveFolderManifest;
 }
 
 /**
  * Führt den vollautomatischen Online-Import aus dem Google Drive Ordner durch:
  * 1. Ruft den Ordner online ab und ignoriert alles andere
- * 2. Lädt die Antragsmappe (PDF) online herunter
+ * 2. Lädt die Antragsmappe (PDF) online herunter (oder verwendet den manuellen Buffer)
  * 3. Lädt alle Strategiedateien (DOCX) online herunter
  * 4. Führt Antrag für Antrag sequenziell mit Ladebalken zusammen
  * 5. Gibt die finale Meldung "Alle Anträge hochgeladen! Das SiP ist nun einsatzbereit!" zurück
  */
-export async function executeOnlineDriveImport(options: {
-  folderUrlOrId: string;
-  onProgress?: AutoImportProgressCallback;
-}): Promise<AutoImportResult> {
-  const { folderUrlOrId, onProgress } = options;
+export async function executeOnlineDriveImport(
+  options: ExecuteOnlineDriveImportOptions
+): Promise<AutoImportResult> {
+  const { folderUrlOrId, onProgress, manualPdfBuffer, cachedManifest } = options;
 
   onProgress?.({
     percent: 5,
     statusText: 'Verbinde mit Google Drive Ordner...',
   });
 
-  // 1. Ordner-Manifest online auflösen
-  const manifest = await resolveDriveFolderManifest(folderUrlOrId, (txt) => {
-    onProgress?.({ percent: 10, statusText: txt });
-  });
+  // 1. Ordner-Manifest online auflösen (falls nicht bereits gecached)
+  let manifest = cachedManifest;
+  if (!manifest) {
+    manifest = await resolveDriveFolderManifest(folderUrlOrId, (txt) => {
+      onProgress?.({ percent: 10, statusText: txt });
+    });
+  }
 
   if (
     !manifest.antragsmappe &&
@@ -484,33 +519,56 @@ export async function executeOnlineDriveImport(options: {
     );
   }
 
-  // 2. Antragsmappe (PDF) online herunterladen und Text extrahieren
+  // 2. Antragsmappe (PDF) verarbeiten (per manuellem Buffer oder automatischem Download)
   let antragsmappeText = '';
   if (manifest.antragsmappe) {
-    onProgress?.({
-      percent: 18,
-      statusText: `Lade Antragsmappe herunter (${manifest.antragsmappe.name})...`,
-    });
-    try {
-      const pdfBuffer = await downloadDriveFileAsArrayBuffer(
-        manifest.antragsmappe,
-        (status) => onProgress?.({ percent: 22, statusText: status })
-      );
-
+    if (manualPdfBuffer) {
       onProgress?.({
-        percent: 26,
-        statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
+        percent: 24,
+        statusText: `Verarbeite manuell hochgeladene Antragsmappe (${manifest.antragsmappe.name})...`,
       });
       try {
-        antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
+        antragsmappeText = await extractTextFromPdfArrayBuffer(manualPdfBuffer);
       } catch (pdfErr) {
         console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
-        antragsmappeText = await extractTextFromDocxArrayBuffer(pdfBuffer);
+        antragsmappeText = await extractTextFromDocxArrayBuffer(manualPdfBuffer);
       }
-      console.log(`[DRIVE-PDF] Antragsmappe "${manifest.antragsmappe.name}" extrahiert (${antragsmappeText.length} Zeichen)`);
-    } catch (err: any) {
-      console.error('Fehler beim Extrahieren der Antragsmappe:', err);
-      throw new Error(`Fehler beim Laden der Antragsmappe (${manifest.antragsmappe.name}): ${err?.message || err}`);
+      console.log(
+        `[MANUAL-PDF] Antragsmappe "${manifest.antragsmappe.name}" aus manuellem Upload extrahiert (${antragsmappeText.length} Zeichen)`
+      );
+    } else {
+      onProgress?.({
+        percent: 18,
+        statusText: `Lade Antragsmappe herunter (${manifest.antragsmappe.name})...`,
+      });
+      try {
+        const pdfBuffer = await downloadDriveFileAsArrayBuffer(
+          manifest.antragsmappe,
+          (status) => onProgress?.({ percent: 22, statusText: status })
+        );
+
+        onProgress?.({
+          percent: 26,
+          statusText: 'Verarbeite Antragsmappe PDF & filtere Geschäftsordnung...',
+        });
+        try {
+          antragsmappeText = await extractTextFromPdfArrayBuffer(pdfBuffer);
+        } catch (pdfErr) {
+          console.warn('PDF-Extraktion fehlgeschlagen, versuche als DOCX:', pdfErr);
+          antragsmappeText = await extractTextFromDocxArrayBuffer(pdfBuffer);
+        }
+        console.log(
+          `[DRIVE-PDF] Antragsmappe "${manifest.antragsmappe.name}" extrahiert (${antragsmappeText.length} Zeichen)`
+        );
+      } catch (err: any) {
+        console.warn('Download der Antragsmappe fehlgeschlagen:', err);
+        const blockedErr = new DriveDownloadBlockedError(
+          manifest.antragsmappe,
+          err.status || 403,
+          manifest
+        );
+        throw blockedErr;
+      }
     }
   }
 

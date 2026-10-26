@@ -15,6 +15,7 @@ import {
   FolderOpen,
   Sparkles,
   Check,
+  Upload,
 } from 'lucide-react';
 import { SipArchivedSession, SipSession, SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { AppSettings } from '../../types';
@@ -25,7 +26,7 @@ import {
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
 import { AutoImportResult, AutoImportProgress } from '../utils/sipAutoImporter';
-import { executeOnlineDriveImport } from '../utils/driveFolderCrawler';
+import { executeOnlineDriveImport, GoogleDriveFolderManifest } from '../utils/driveFolderCrawler';
 
 /**
  * Berechnet intelligent den Folgetitel für ein Schüler:innenparlament:
@@ -91,6 +92,9 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [manualUploadRequired, setManualUploadRequired] = useState(false);
+  const [pendingManifest, setPendingManifest] = useState<GoogleDriveFolderManifest | null>(null);
+  const [manualUploadFileName, setManualUploadFileName] = useState<string>('');
 
   useEffect(() => {
     loadArchives();
@@ -156,6 +160,8 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     }
 
     setIsProcessingFiles(true);
+    setManualUploadRequired(false);
+    setPendingManifest(null);
     setImportProgress({ percent: 5, statusText: 'Verbinde mit Google Drive Ordner...' });
     setImportResult(null);
 
@@ -165,9 +171,50 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
         onProgress: (p) => setImportProgress(p),
       });
       setImportResult(res);
+      setManualUploadRequired(false);
+      setPendingManifest(null);
     } catch (err: any) {
       console.error('Fehler beim Online-Google-Drive-Import:', err);
-      alert(err.message || 'Fehler beim Abrufen der Google Drive Dokumente.');
+      if (
+        err.isDownloadBlocked ||
+        err.name === 'DriveDownloadBlockedError' ||
+        /403|408|blockier/i.test(err.message)
+      ) {
+        setManualUploadRequired(true);
+        if (err.manifest) {
+          setPendingManifest(err.manifest);
+        }
+        if (err.file?.name) {
+          setManualUploadFileName(err.file.name);
+        }
+        setImportProgress(null);
+      } else {
+        alert(err.message || 'Fehler beim Abrufen der Google Drive Dokumente.');
+        setImportProgress(null);
+      }
+    } finally {
+      setIsProcessingFiles(false);
+    }
+  }
+
+  async function handleManualPdfSelected(file: File) {
+    if (!file) return;
+    setIsProcessingFiles(true);
+    setImportProgress({ percent: 20, statusText: `Lese ${file.name} ein...` });
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const res = await executeOnlineDriveImport({
+        folderUrlOrId: newDriveFolderUrl.trim(),
+        manualPdfBuffer: arrayBuffer,
+        cachedManifest: pendingManifest || undefined,
+        onProgress: (p) => setImportProgress(p),
+      });
+      setImportResult(res);
+      setManualUploadRequired(false);
+      setPendingManifest(null);
+    } catch (err: any) {
+      console.error('Fehler nach manuellem PDF-Upload:', err);
+      alert('Fehler beim Verarbeiten der hochgeladenen PDF-Datei: ' + (err?.message || err));
       setImportProgress(null);
     } finally {
       setIsProcessingFiles(false);
@@ -471,6 +518,8 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                         onChange={(e) => {
                           setNewDriveFolderUrl(e.target.value);
                           setImportResult(null);
+                          setManualUploadRequired(false);
+                          setPendingManifest(null);
                         }}
                         placeholder="https://drive.google.com/drive/folders/..."
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-amber-500"
@@ -492,6 +541,50 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                 <p className="text-[11px] text-slate-300 leading-relaxed">
                   Greift online direkt über den eingefügten Link auf den freigegebenen Google Drive-Ordner zu. Das Programm lädt vollautomatisch die <strong>Antragsmappe (.pdf)</strong> und die Strategiedateien aus dem Unterordner <strong>„Strategie“ (.docx)</strong> herunter und kombiniert diese Antrag für Antrag. <em>Alle anderen Dateien und Ordner werden automatisch ignoriert.</em>
                 </p>
+
+                {/* Fallback auf manuellen Upload (Der Lebensretter) */}
+                {manualUploadRequired && !importResult && (
+                  <div className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500/50 text-amber-200 space-y-3 animate-in fade-in">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/30">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-sm text-amber-300">
+                          Google blockiert den automatischen Download der Antragsmappe. Bitte lade die Datei hier manuell hoch.
+                        </h4>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          Google Drive verweigert den automatischen Browser-Download (Anti-Bot / HTTP 403).
+                          {manualUploadFileName ? ` Erwartet: „${manualUploadFileName}“. ` : ' '}
+                          Die Strategiedateien aus Google Drive werden anschließend automatisch mit der Mappe zusammengeführt.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-1">
+                      <label className="flex flex-col items-center justify-center border-2 border-dashed border-amber-500/50 hover:border-amber-400 bg-slate-950/80 hover:bg-slate-950 rounded-2xl p-4 cursor-pointer transition group shadow-inner">
+                        <Upload className="w-7 h-7 text-amber-400 mb-1.5 group-hover:scale-110 transition-transform" />
+                        <span className="text-xs sm:text-sm font-bold text-white mb-0.5">
+                          Antragsmappe (.pdf) auswählen
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          Hier klicken, um die Datei vom Rechner hochzuladen
+                        </span>
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              await handleManualPdfSelected(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 {/* Ladebalken während des Online-Downloads / Imports */}
                 {isProcessingFiles && importProgress && (

@@ -1,7 +1,3 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
-
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -21,21 +17,24 @@ function fetchHtml(url: string): Promise<string> {
   });
 }
 
-function extractItems(html: string) {
-  const items: Array<{ name: string; id: string; isFolder: boolean }> = [];
-  const regex = /aria-label="([^"]+)"[^>]*ssk='5:auSv138:([a-zA-Z0-9_\-]+)/g;
+function extractEmbeddedItems(html: string) {
+  const items: Array<{ name: string; id: string; isFolder: boolean; isGoogleDoc: boolean }> = [];
+  const regex =
+    /<div\s+class="flip-entry"\s+id="entry-([a-zA-Z0-9_\-]+)"[\s\S]*?<a\s+href="([^"]+)"[\s\S]*?<div\s+class="flip-entry-title">([\s\S]*?)<\/div>/gi;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(html)) !== null) {
-    const rawLabel = m[1];
-    let id = m[2].replace(/-\d+-\d+$/, '');
-    const isFolder = /folder/i.test(rawLabel);
-    const cleanName = rawLabel
-      .replace(
-        /\s+(?:Shared\s+folder|PDF(?:\s+Shared)?|Microsoft\s+(?:Word|Excel)(?:\s+Shared)?)$/i,
-        ''
-      )
+    const id = m[1].trim();
+    const href = m[2].trim();
+    const name = m[3]
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .normalize('NFC')
       .trim();
-    items.push({ name: cleanName, id, isFolder });
+    const isFolder = /\/folders\//i.test(href);
+    const isGoogleDoc = /docs\.google\.com\/document\/d\//i.test(href);
+    items.push({ name, id, isFolder, isGoogleDoc });
   }
   return items;
 }
@@ -59,55 +58,72 @@ function driveFolderCrawlerPlugin(): Plugin {
             return;
           }
 
-          // Folder ID extrahieren falls ganze URL übergeben wurde
           const match = folderId.match(/\/folders\/([a-zA-Z0-9_\-]+)/i);
           if (match && match[1]) folderId = match[1];
 
-          const rootUrl = `https://drive.google.com/drive/folders/${folderId}`;
-          const rootHtml = await fetchHtml(rootUrl);
-          const rootItems = extractItems(rootHtml);
+          const rootHtml = await fetchHtml(
+            `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(folderId)}`
+          );
+          const rootItems = extractEmbeddedItems(rootHtml);
 
           // 1. Antragsmappe PDF
           const pdfItem =
             rootItems.find(
-              (i) => !i.isFolder && /antragsmappe/i.test(i.name) && i.name.endsWith('.pdf')
-            ) || rootItems.find((i) => !i.isFolder && i.name.endsWith('.pdf'));
+              (i) =>
+                !i.isFolder &&
+                /antragsmappe/i.test(i.name) &&
+                !/vorab-kommentierung|bidi/i.test(i.name) &&
+                i.name.toLowerCase().endsWith('.pdf')
+            ) ||
+            rootItems.find(
+              (i) => !i.isFolder && /antragsmappe/i.test(i.name) && i.name.toLowerCase().endsWith('.pdf')
+            ) ||
+            rootItems.find((i) => !i.isFolder && i.name.toLowerCase().endsWith('.pdf'));
 
           // 2. Strategie Ordner
           const stratFolder = rootItems.find((i) => i.isFolder && /strategie/i.test(i.name));
-          let docxItems: Array<{ name: string; id: string; isFolder: boolean }> = [];
+          const docxMap = new Map<string, { name: string; id: string; isGoogleDoc: boolean }>();
+
+          const isStratFile = (i: { name: string; isFolder: boolean; isGoogleDoc: boolean }) => {
+            if (i.isFolder) return false;
+            const lower = i.name.toLowerCase();
+            if (/legende|formatierung|wichtigste\s+sip\s+go|how\s+to/i.test(lower)) return false;
+            return i.isGoogleDoc || lower.endsWith('.docx') || lower.endsWith('.doc') || lower.endsWith('.txt');
+          };
 
           if (stratFolder) {
             const stratHtml = await fetchHtml(
-              `https://drive.google.com/drive/folders/${stratFolder.id}`
+              `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(stratFolder.id)}`
             );
-            const stratItems = extractItems(stratHtml);
-            const antraegeSub = stratItems.find(
-              (i) => i.isFolder && /antr.*strategie/i.test(i.name)
-            );
+            const stratItems = extractEmbeddedItems(stratHtml);
 
-            if (antraegeSub) {
+            for (const item of stratItems) {
+              if (isStratFile(item)) {
+                docxMap.set(item.id, item);
+              }
+            }
+
+            const subFolders = stratItems.filter(
+              (i) => i.isFolder && !/bidi|kommentierung|archiv/i.test(i.name)
+            );
+            for (const sub of subFolders) {
               const subHtml = await fetchHtml(
-                `https://drive.google.com/drive/folders/${antraegeSub.id}`
+                `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(sub.id)}`
               );
-              const subItems = extractItems(subHtml);
-              docxItems = subItems.filter(
-                (i) => !i.isFolder && (i.name.endsWith('.docx') || i.name.endsWith('.doc'))
-              );
-            } else {
-              docxItems = stratItems.filter(
-                (i) =>
-                  !i.isFolder &&
-                  (i.name.endsWith('.docx') || i.name.endsWith('.doc')) &&
-                  !/formatierung|erweiterung/i.test(i.name)
-              );
+              const subItems = extractEmbeddedItems(subHtml);
+              for (const subItem of subItems) {
+                if (isStratFile(subItem)) {
+                  docxMap.set(subItem.id, subItem);
+                }
+              }
             }
           }
 
-          docxItems.sort((a, b) => {
-            const numA = parseInt((a.name.match(/\d+/) || [0])[0], 10);
-            const numB = parseInt((b.name.match(/\d+/) || [0])[0], 10);
-            return numA - numB;
+          const docxItems = Array.from(docxMap.values()).sort((a, b) => {
+            const numA = parseInt((a.name.match(/^(\d+)/) || ['9999'])[0], 10);
+            const numB = parseInt((b.name.match(/^(\d+)/) || ['9999'])[0], 10);
+            if (numA !== numB) return numA - numB;
+            return a.name.localeCompare(b.name, 'de');
           });
 
           const manifest = {
@@ -120,9 +136,11 @@ function driveFolderCrawlerPlugin(): Plugin {
                 }
               : null,
             strategieFiles: docxItems.map((d) => ({
-              name: d.name,
+              name: d.isGoogleDoc && !/\.(?:docx|doc)$/i.test(d.name) ? `${d.name}.docx` : d.name,
               id: d.id,
-              downloadUrl: `https://drive.usercontent.google.com/download?id=${d.id}`,
+              downloadUrl: d.isGoogleDoc
+                ? `https://docs.google.com/document/d/${d.id}/export?format=docx`
+                : `https://drive.usercontent.google.com/download?id=${d.id}`,
             })),
             updatedAt: new Date().toISOString(),
           };

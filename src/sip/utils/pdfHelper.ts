@@ -1,18 +1,38 @@
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+// Polyfills für neuere ES2025/2026 Methoden, die von pdfjs-dist v6 intern aufgerufen werden
+if (typeof (Promise as any).try !== 'function') {
+  (Promise as any).try = function (fn: (...args: any[]) => any, ...args: any[]) {
+    return new Promise((resolve) => resolve(fn(...args)));
+  };
+}
+
+if (typeof (Uint8Array.prototype as any).toHex !== 'function') {
+  (Uint8Array.prototype as any).toHex = function (this: Uint8Array) {
+    let hex = '';
+    for (let i = 0; i < this.length; i++) {
+      hex += this[i].toString(16).padStart(2, '0');
+    }
+    return hex;
+  };
+}
 
 if (typeof window !== 'undefined') {
   try {
     pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
+      'pdfjs-dist/legacy/build/pdf.worker.mjs',
       import.meta.url
     ).toString();
   } catch {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '4.10.38'}/build/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '6.4.299'}/legacy/build/pdf.worker.min.mjs`;
   }
 }
 
 export async function extractTextFromPdfArrayBuffer(buffer: ArrayBuffer): Promise<string> {
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+  });
   const pdf = await loadingTask.promise;
   let fullText = '';
 

@@ -1,6 +1,10 @@
 import mammoth from 'mammoth';
 
 export async function extractTextFromDocxArrayBuffer(buffer: ArrayBuffer): Promise<string> {
-  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
-  return result.value || '';
+  const options: any = { arrayBuffer: buffer };
+  if (typeof Buffer !== 'undefined') {
+    options.buffer = Buffer.from(buffer);
+  }
+  const result = await mammoth.extractRawText(options);
+  return (result.value || '').normalize('NFC');
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Sparkles,
@@ -6,95 +6,58 @@ import {
   Square,
   FileText,
   Check,
-  AlertCircle,
-  UploadCloud,
   CheckCircle2,
   FolderOpen,
 } from 'lucide-react';
-import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
+import { SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
-import {
-  executeAutoSiPImport,
-  classifySiPFolderFiles,
-  AutoImportResult,
-  AutoImportProgress,
-} from '../utils/sipAutoImporter';
+import { AutoImportResult, AutoImportProgress } from '../utils/sipAutoImporter';
+import { executeOnlineDriveImport } from '../utils/driveFolderCrawler';
 
 interface MotionParserModalProps {
   onClose: () => void;
   onImport: (antraege: SipAntrag[], strategyNotes?: string) => void;
+  initialDriveUrl?: string;
 }
 
 export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   onClose,
   onImport,
+  initialDriveUrl = 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
 }) => {
-  const [activeMode, setActiveMode] = useState<'auto_files' | 'raw_text'>('auto_files');
+  const [activeMode, setActiveMode] = useState<'online_drive' | 'raw_text'>('online_drive');
 
-  // Auto Files Mode
-  const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
-  const [strategieFiles, setStrategieFiles] = useState<File[]>([]);
+  // Online Drive Mode
+  const [driveUrlInput, setDriveUrlInput] = useState(initialDriveUrl);
   const [isProcessing, setIsProcessing] = useState(false);
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Raw Text Mode
   const [inputText, setInputText] = useState('');
   const [parsedItems, setParsedItems] = useState<ParsedRawAntrag[]>([]);
   const [hasScanned, setHasScanned] = useState(false);
 
-  async function handleFolderSelect(files: FileList | File[] | null) {
-    if (!files || files.length === 0) return;
-    setIsProcessing(true);
-    setImportProgress({ percent: 5, statusText: 'Lese SiP-Ordner ein...' });
-    try {
-      const classified = classifySiPFolderFiles(files);
-      if (classified.antragsmappeFile) {
-        setAntragsmappeFile(classified.antragsmappeFile);
-      }
-      if (classified.strategieFiles.length > 0) {
-        setStrategieFiles(classified.strategieFiles);
-      }
-      const res = await executeAutoSiPImport({
-        files,
-        onProgress: (p) => setImportProgress(p),
-      });
-      setAutoResult(res);
-    } catch (err) {
-      console.error('Fehler beim Ordner-Import:', err);
-    } finally {
-      setIsProcessing(false);
-    }
-  }
-
-  async function handleProcessAutoFiles(mappe?: File | null, strats?: File[] | File | null) {
-    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
-    let targetStrats: File[] = [];
-    if (strats !== undefined) {
-      if (Array.isArray(strats)) targetStrats = strats;
-      else if (strats) targetStrats = [strats];
-    } else {
-      targetStrats = strategieFiles;
-    }
-
-    if (!targetMappe && targetStrats.length === 0) {
-      setAutoResult(null);
-      setImportProgress(null);
+  async function handleOnlineDriveImport() {
+    if (!driveUrlInput.trim()) {
+      alert('Bitte gib zuerst einen Google Drive Ordner-Link ein.');
       return;
     }
 
     setIsProcessing(true);
-    setImportProgress({ percent: 5, statusText: 'Lese Dateien ein...' });
+    setImportProgress({ percent: 5, statusText: 'Verbinde mit Google Drive...' });
+    setAutoResult(null);
+
     try {
-      const res = await executeAutoSiPImport({
-        antragsmappeFile: targetMappe || undefined,
-        strategieFiles: targetStrats.length > 0 ? targetStrats : undefined,
+      const res = await executeOnlineDriveImport({
+        folderUrlOrId: driveUrlInput.trim(),
         onProgress: (p) => setImportProgress(p),
       });
       setAutoResult(res);
-    } catch (err) {
-      console.error('Fehler beim Extrahieren:', err);
+    } catch (err: any) {
+      console.error('Fehler beim Online-Drive-Import:', err);
+      alert(err.message || 'Fehler beim Abrufen der Google Drive Dokumente.');
+      setImportProgress(null);
     } finally {
       setIsProcessing(false);
     }
@@ -113,7 +76,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   }
 
   function handleCommitImport() {
-    if (activeMode === 'auto_files') {
+    if (activeMode === 'online_drive') {
       if (!autoResult || autoResult.antraege.length === 0) return;
       onImport(autoResult.antraege, autoResult.strategyNotes);
       onClose();
@@ -127,8 +90,8 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl text-white max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl text-white my-auto max-h-[92vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -155,15 +118,15 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
         <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-4 shrink-0">
           <button
             type="button"
-            onClick={() => setActiveMode('auto_files')}
+            onClick={() => setActiveMode('online_drive')}
             className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-              activeMode === 'auto_files'
+              activeMode === 'online_drive'
                 ? 'bg-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <UploadCloud className="w-4 h-4" />
-            <span>Dateien kombinieren (PDF + DOCX)</span>
+            <FolderOpen className="w-4 h-4" />
+            <span>Online aus Google Drive laden</span>
           </button>
           <button
             type="button"
@@ -181,94 +144,44 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 
         {/* Content Body */}
         <div className="overflow-y-auto flex-1 pr-1 space-y-4">
-          {activeMode === 'auto_files' ? (
+          {activeMode === 'online_drive' ? (
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-950 to-indigo-950/40 border border-purple-500/40 space-y-3">
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Lade den gesamten freigegebenen SiP-Ordner oder die PDF-Antragsmappe (z.B. <strong className="text-white">„2. SiP Antragsmappe.pdf“</strong>) und die Strategie-Dateien aus dem Unterordner <strong className="text-white">„Strategie“</strong> (DOCX) hoch. Die Antragstexte werden automatisch den Strategien zugeordnet und die Geschäftsordnung am Schluss wird herausgefiltert.
-                </p>
-
-                {/* 1-Klick SiP-Ordner Auswählen */}
-                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-500/30 space-y-2">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="text-left">
-                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <FolderOpen className="w-4 h-4 text-amber-400" />
-                        <span>Kompletten SiP-Ordner auswählen (1-Klick)</span>
-                      </span>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">
-                        Liest Antragsmappe (.pdf) und alle Strategiedokumente im Unterordner „Strategie“ automatisch ein.
-                      </span>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Google Drive Ordner (Link):
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <FolderOpen className="w-4 h-4" />
+                      </div>
+                      <input
+                        type="url"
+                        value={driveUrlInput}
+                        onChange={(e) => {
+                          setDriveUrlInput(e.target.value);
+                          setAutoResult(null);
+                        }}
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
+                      />
                     </div>
                     <button
                       type="button"
-                      onClick={() => folderInputRef.current?.click()}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-600/30 transition cursor-pointer shrink-0"
+                      disabled={isProcessing || !driveUrlInput.trim()}
+                      onClick={handleOnlineDriveImport}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-purple-600/30 transition cursor-pointer shrink-0"
                     >
-                      Ordner auswählen
+                      <Sparkles className="w-4 h-4" />
+                      <span>{isProcessing ? 'Lädt online...' : 'Dokumente online aus Drive laden'}</span>
                     </button>
-                    <input
-                      ref={folderInputRef}
-                      type="file"
-                      {...({ webkitdirectory: '', directory: '' } as any)}
-                      multiple
-                      className="hidden"
-                      onClick={(e) => {
-                        (e.currentTarget as HTMLInputElement).value = '';
-                      }}
-                      onChange={(e) => handleFolderSelect(e.target.files)}
-                    />
                   </div>
                 </div>
 
-                <div className="text-center text-[10px] text-slate-500 uppercase tracking-wider font-bold">
-                  — oder Dateien manuell auswählen —
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  {/* File 1: Antragsmappe PDF */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-300">
-                      📄 1. SiP Antragsmappe (PDF):
-                    </label>
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0] || null;
-                        setAntragsmappeFile(file);
-                        await handleProcessAutoFiles(file, undefined);
-                      }}
-                      className="block w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
-                    />
-                    <span className="text-[11px] text-slate-500 block truncate">
-                      {antragsmappeFile ? antragsmappeFile.name : 'z.B. (Nummer). SiP Antragsmappe.pdf'}
-                    </span>
-                  </div>
-
-                  {/* File 2: Strategie DOCX / Text (Mehrfachauswahl möglich) */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-slate-300">
-                      🎯 2. Strategie-Dateien (DOCX / Text):
-                    </label>
-                    <input
-                      type="file"
-                      accept=".docx,.doc,.txt"
-                      multiple
-                      onChange={async (e) => {
-                        const files = e.target.files ? Array.from(e.target.files) : [];
-                        setStrategieFiles(files);
-                        await handleProcessAutoFiles(undefined, files);
-                      }}
-                      className="block w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
-                    />
-                    <span className="text-[11px] text-slate-500 block truncate">
-                      {strategieFiles.length > 0
-                        ? `${strategieFiles.length} Strategiedatei(en) gewählt`
-                        : 'z.B. alle Dateien aus Unterordner "Strategie"'}
-                    </span>
-                  </div>
-                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Greift online direkt auf den freigegebenen Google Drive-Ordner zu. Das System lädt vollautomatisch die <strong>Antragsmappe (.pdf)</strong> und alle Strategiedateien aus dem Unterordner <strong>„Strategie“ (.docx)</strong> herunter. <em>Alle anderen Dateien und Ordner werden ignoriert.</em>
+                </p>
               </div>
 
               {/* Ladebalken während des Uploads / Imports */}
@@ -453,7 +366,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
           <button
             type="button"
             disabled={
-              activeMode === 'auto_files'
+              activeMode === 'online_drive'
                 ? !autoResult || autoResult.antraege.length === 0
                 : !hasScanned || parsedItems.filter((i) => i.selected).length === 0
             }
@@ -462,7 +375,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
           >
             <Check className="w-4 h-4" />
             <span>
-              {activeMode === 'auto_files'
+              {activeMode === 'online_drive'
                 ? `${autoResult?.antraege.length || 0} Anträge jetzt importieren`
                 : `${parsedItems.filter((i) => i.selected).length} Anträge importieren`}
             </span>

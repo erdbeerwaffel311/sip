@@ -141,7 +141,7 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
               Anträge & Strategie automatisch importieren
             </h4>
             <p className="text-xs text-slate-300">
-              Kombiniert PDF-Antragsmappe und Strategie (DOCX) aus dem Drive-Ordner automatisch. Die Geschäftsordnung am Schluss wird ignoriert!
+              Lädt die Antragsmappe (PDF) und alle Strategiedateien (DOCX) online aus dem verknüpften Google Drive Ordner und kombiniert diese automatisch. Die Geschäftsordnung am Schluss wird ignoriert!
             </p>
           </div>
         </div>
@@ -152,7 +152,7 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
           className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-600/30 shrink-0 transition cursor-pointer"
         >
           <Sparkles className="w-4 h-4" />
-          <span>Anträge & Strategie importieren</span>
+          <span>Online aus Drive importieren</span>
         </button>
       </div>
 

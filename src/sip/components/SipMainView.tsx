@@ -819,6 +819,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         <MotionParserModal
           onClose={() => setShowParserModal(false)}
           onImport={handleImportAntraege}
+          initialDriveUrl={session.driveFolderUrl}
         />
       )}
 

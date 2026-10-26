@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   Sparkles,
@@ -13,7 +13,11 @@ import {
 } from 'lucide-react';
 import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
-import { executeAutoSiPImport, AutoImportResult } from '../utils/sipAutoImporter';
+import {
+  executeAutoSiPImport,
+  classifySiPFolderFiles,
+  AutoImportResult,
+} from '../utils/sipAutoImporter';
 
 interface MotionParserModalProps {
   onClose: () => void;
@@ -28,20 +32,47 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
 
   // Auto Files Mode
   const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
-  const [strategieFile, setStrategieFile] = useState<File | null>(null);
+  const [strategieFiles, setStrategieFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Raw Text Mode
   const [inputText, setInputText] = useState('');
   const [parsedItems, setParsedItems] = useState<ParsedRawAntrag[]>([]);
   const [hasScanned, setHasScanned] = useState(false);
 
-  async function handleProcessAutoFiles(mappe?: File | null, strat?: File | null) {
-    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
-    const targetStrat = strat !== undefined ? strat : strategieFile;
+  async function handleFolderSelect(files: FileList | File[] | null) {
+    if (!files || files.length === 0) return;
+    setIsProcessing(true);
+    try {
+      const classified = classifySiPFolderFiles(files);
+      if (classified.antragsmappeFile) {
+        setAntragsmappeFile(classified.antragsmappeFile);
+      }
+      if (classified.strategieFiles.length > 0) {
+        setStrategieFiles(classified.strategieFiles);
+      }
+      const res = await executeAutoSiPImport({ files });
+      setAutoResult(res);
+    } catch (err) {
+      console.error('Fehler beim Ordner-Import:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
 
-    if (!targetMappe && !targetStrat) {
+  async function handleProcessAutoFiles(mappe?: File | null, strats?: File[] | File | null) {
+    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
+    let targetStrats: File[] = [];
+    if (strats !== undefined) {
+      if (Array.isArray(strats)) targetStrats = strats;
+      else if (strats) targetStrats = [strats];
+    } else {
+      targetStrats = strategieFiles;
+    }
+
+    if (!targetMappe && targetStrats.length === 0) {
       setAutoResult(null);
       return;
     }
@@ -50,7 +81,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     try {
       const res = await executeAutoSiPImport({
         antragsmappeFile: targetMappe || undefined,
-        strategieFile: targetStrat || undefined,
+        strategieFiles: targetStrats.length > 0 ? targetStrats : undefined,
       });
       setAutoResult(res);
     } catch (err) {
@@ -145,8 +176,42 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-950 to-indigo-950/40 border border-purple-500/40 space-y-3">
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Lade die PDF-Antragsmappe (z.B. <strong className="text-white">„2. SiP Antragsmappe.pdf“</strong>) und die Strategie-Datei aus dem Ordner <strong className="text-white">„Strategie“</strong> (DOCX) hoch. Die Antragstexte werden automatisch den Strategien zugeordnet und die Geschäftsordnung am Schluss wird herausgefiltert.
+                  Lade den gesamten freigegebenen SiP-Ordner oder die PDF-Antragsmappe (z.B. <strong className="text-white">„2. SiP Antragsmappe.pdf“</strong>) und die Strategie-Dateien aus dem Unterordner <strong className="text-white">„Strategie“</strong> (DOCX) hoch. Die Antragstexte werden automatisch den Strategien zugeordnet und die Geschäftsordnung am Schluss wird herausgefiltert.
                 </p>
+
+                {/* 1-Klick SiP-Ordner Auswählen */}
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-500/30 space-y-2">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="text-left">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <FolderOpen className="w-4 h-4 text-amber-400" />
+                        <span>Kompletten SiP-Ordner auswählen (1-Klick)</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                        Liest Antragsmappe (.pdf) und alle Strategiedokumente im Unterordner „Strategie“ automatisch ein.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => folderInputRef.current?.click()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-600/30 transition cursor-pointer shrink-0"
+                    >
+                      Ordner auswählen
+                    </button>
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      {...({ webkitdirectory: '', directory: '' } as any)}
+                      multiple
+                      className="hidden"
+                      onChange={(e) => handleFolderSelect(e.target.files)}
+                    />
+                  </div>
+                </div>
+
+                <div className="text-center text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                  — oder Dateien manuell auswählen —
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {/* File 1: Antragsmappe PDF */}
@@ -169,23 +234,26 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                     </span>
                   </div>
 
-                  {/* File 2: Strategie DOCX */}
+                  {/* File 2: Strategie DOCX / Text (Mehrfachauswahl möglich) */}
                   <div className="space-y-1">
                     <label className="block text-xs font-semibold text-slate-300">
-                      🎯 2. Strategie-Datei (DOCX):
+                      🎯 2. Strategie-Dateien (DOCX / Text):
                     </label>
                     <input
                       type="file"
-                      accept=".docx,.txt"
+                      accept=".docx,.doc,.txt"
+                      multiple
                       onChange={async (e) => {
-                        const file = e.target.files?.[0] || null;
-                        setStrategieFile(file);
-                        await handleProcessAutoFiles(undefined, file);
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        setStrategieFiles(files);
+                        await handleProcessAutoFiles(undefined, files);
                       }}
                       className="block w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
                     />
                     <span className="text-[11px] text-slate-500 block truncate">
-                      {strategieFile ? strategieFile.name : 'z.B. aus Ordner "Strategie"'}
+                      {strategieFiles.length > 0
+                        ? `${strategieFiles.length} Strategiedatei(en) gewählt`
+                        : 'z.B. alle Dateien aus Unterordner "Strategie"'}
                     </span>
                   </div>
                 </div>

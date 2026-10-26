@@ -36,6 +36,7 @@ export interface AutoImportResult {
     hauptAntraegeCount: number;
     subAntraegeCount: number;
     matchedSectionsCount: number;
+    strategyFilesCount: number;
     goExcluded: boolean;
   };
 }
@@ -478,44 +479,189 @@ export function combineAntragsmappeAndStrategie(
 }
 
 /**
- * Automatischer Komplett-Import von SiP-Dateien (PDF Antragsmappe & DOCX/Text Strategie).
+ * Erkennt automatisch in einem übergebenen Ordner (z.B. Google Drive SiP-Ordner)
+ * oder einer Dateiliste:
+ * 1. Die Antragsmappe (PDF mit "Antragsmappe" im Namen)
+ * 2. Alle Strategiedateien (im Unterordner "Strategie" oder mit "Strategie" / .docx / .txt)
  */
-export async function executeAutoSiPImport(options: {
+export function classifySiPFolderFiles(files: File[] | FileList): {
+  antragsmappeFile?: File;
+  strategieFiles: File[];
+  unrecognizedFiles: File[];
+} {
+  const fileArray = Array.from(files);
+  let antragsmappeFile: File | undefined;
+  const strategieFiles: File[] = [];
+  const unrecognizedFiles: File[] = [];
+
+  // 1. Suche nach der Antragsmappe: Name enthält "antragsmappe" und endet mit ".pdf"
+  antragsmappeFile = fileArray.find((f) => {
+    const name = f.name.toLowerCase();
+    return name.includes('antragsmappe') && name.endsWith('.pdf');
+  });
+
+  // Falls nicht direkt über "Antragsmappe" im Namen gefunden: Erste PDF-Datei außerhalb von "Strategie"
+  if (!antragsmappeFile) {
+    antragsmappeFile = fileArray.find((f) => {
+      const relPath = (f.webkitRelativePath || f.name).toLowerCase();
+      return f.name.toLowerCase().endsWith('.pdf') && !relPath.includes('/strategie/');
+    });
+  }
+
+  // 2. Suche nach Strategiedateien (Unterordner "Strategie", Name mit "strategie" oder DOCX/TXT)
+  for (const f of fileArray) {
+    if (f === antragsmappeFile) continue;
+    const name = f.name.toLowerCase();
+    const relPath = (f.webkitRelativePath || f.name).toLowerCase();
+
+    // Versteckte oder Word-Lockdateien ignorieren (~$Antrag.docx, .DS_Store)
+    if (f.name.startsWith('~$') || f.name.startsWith('.')) continue;
+
+    const isInStrategieFolder = relPath.includes('/strategie/') || relPath.includes('\\strategie\\');
+    const isDocxOrTxt =
+      name.endsWith('.docx') ||
+      name.endsWith('.doc') ||
+      name.endsWith('.txt') ||
+      name.endsWith('.md');
+    const isStrategieName = name.includes('strategie');
+
+    if (isInStrategieFolder || (isDocxOrTxt && (isStrategieName || isInStrategieFolder || !antragsmappeFile))) {
+      strategieFiles.push(f);
+    } else if (isDocxOrTxt) {
+      // Auch allgemeine docx-Dateien als Strategiekandidaten aufnehmen
+      strategieFiles.push(f);
+    } else {
+      unrecognizedFiles.push(f);
+    }
+  }
+
+  return { antragsmappeFile, strategieFiles, unrecognizedFiles };
+}
+
+/**
+ * Extrahiert den Text aus einer einzelnen Strategie-Datei (DOCX oder Text).
+ * Falls die Datei für einen einzelnen Antrag steht (z.B. "Antrag 1 - Menstruationsartikel.docx"),
+ * wird der Titel aus dem Dateinamen als Überschrift vorangestellt.
+ */
+async function extractTextFromSingleStrategieFile(
+  file: File | ArrayBuffer,
+  fileName: string = ''
+): Promise<string> {
+  let text = '';
+  const lowerName = fileName.toLowerCase();
+  const isDocx = lowerName.endsWith('.docx') || lowerName.endsWith('.doc');
+
+  if (file instanceof ArrayBuffer) {
+    if (isDocx) {
+      text = await extractTextFromDocxArrayBuffer(file);
+    } else {
+      text = new TextDecoder('utf-8').decode(file);
+    }
+  } else {
+    if (isDocx) {
+      const buffer = await file.arrayBuffer();
+      text = await extractTextFromDocxArrayBuffer(buffer);
+    } else {
+      text = await file.text();
+    }
+  }
+
+  // Bereinige den Dateinamen
+  const cleanBaseName = fileName.replace(/\.[^/.]+$/, '').trim();
+
+  // Prüfe, ob im Dokument bereits eine Hauptantrags-Überschrift vorhanden ist
+  const hasMotionHeader = /(?:^|\r?\n)(?:(?:strategie\s+(?:für|zu)\s+)?(?:haupt)?antrag\s*\d+|top\s*\d+|\d{1,2}[\.:]\s+[A-ZÄÖÜ])/i.test(
+    text
+  );
+
+  // Falls der Dateiname auf einen Antrag hinweist (z.B. "Antrag 1", "Antrag 2 - Psychologie", "TOP 3")
+  // und keine Überschrift im Text steht, Überschrift voranstellen
+  if (!hasMotionHeader && cleanBaseName.length > 2) {
+    return `### ${cleanBaseName}\n\n${text}`;
+  }
+
+  return text;
+}
+
+export interface AutoImportOptions {
+  files?: File[] | FileList;
   antragsmappeFile?: File | ArrayBuffer;
   antragsmappeText?: string;
   strategieFile?: File | ArrayBuffer;
+  strategieFiles?: (File | ArrayBuffer)[];
   strategieText?: string;
-}): Promise<AutoImportResult> {
+}
+
+/**
+ * Automatischer Komplett-Import von SiP-Dateien:
+ * Unterstützt:
+ * 1. Freigegebenen Google Drive-Ordner (alle Dateien auf einmal via webkitdirectory oder Drag & Drop)
+ * 2. Antragsmappe PDF + Unterordner "Strategie" (einzelne oder mehrere DOCX-Dateien)
+ * 3. Automatische Verknüpfung von Antragstext & Strategie nach gleichem Titel
+ * 4. Automatischer Ausschluss der Geschäftsordnung (GO) am Ende der Antragsmappe
+ * 5. Vollzugsmeldung ("Alles bereit fürs Plenum!")
+ */
+export async function executeAutoSiPImport(options: AutoImportOptions): Promise<AutoImportResult> {
   let finalAntragsmappeText = options.antragsmappeText || '';
   let finalStrategieText = options.strategieText || '';
 
-  // 1. Text aus PDF-Datei extrahieren falls vorhanden
-  if (options.antragsmappeFile) {
+  let targetAntragsmappe = options.antragsmappeFile;
+  const targetStrategieFiles: (File | ArrayBuffer)[] = [];
+
+  // Wenn ein Ordner oder eine Liste von Dateien übergeben wurde
+  if (options.files && options.files.length > 0) {
+    const classified = classifySiPFolderFiles(options.files);
+    if (!targetAntragsmappe && classified.antragsmappeFile) {
+      targetAntragsmappe = classified.antragsmappeFile;
+    }
+    if (classified.strategieFiles.length > 0) {
+      targetStrategieFiles.push(...classified.strategieFiles);
+    }
+  }
+
+  if (options.strategieFile) {
+    targetStrategieFiles.push(options.strategieFile);
+  }
+  if (options.strategieFiles && options.strategieFiles.length > 0) {
+    targetStrategieFiles.push(...options.strategieFiles);
+  }
+
+  // 1. Text aus PDF-Antragsmappe extrahieren
+  if (targetAntragsmappe) {
     try {
       const buffer =
-        options.antragsmappeFile instanceof ArrayBuffer
-          ? options.antragsmappeFile
-          : await options.antragsmappeFile.arrayBuffer();
+        targetAntragsmappe instanceof ArrayBuffer
+          ? targetAntragsmappe
+          : await targetAntragsmappe.arrayBuffer();
       finalAntragsmappeText = await extractTextFromPdfArrayBuffer(buffer);
     } catch (err) {
-      console.warn('Konnte PDF nicht extrahieren:', err);
+      console.warn('Konnte Antragsmappen-PDF nicht extrahieren:', err);
     }
   }
 
-  // 2. Text aus DOCX-Datei extrahieren falls vorhanden
-  if (options.strategieFile) {
-    try {
-      const buffer =
-        options.strategieFile instanceof ArrayBuffer
-          ? options.strategieFile
-          : await options.strategieFile.arrayBuffer();
-      finalStrategieText = await extractTextFromDocxArrayBuffer(buffer);
-    } catch (err) {
-      console.warn('Konnte DOCX nicht extrahieren:', err);
+  // 2. Text aus allen Strategiedateien (Unterordner "Strategie" / DOCX / TXT) extrahieren
+  if (targetStrategieFiles.length > 0) {
+    const extractedSections: string[] = [];
+    for (let i = 0; i < targetStrategieFiles.length; i++) {
+      const f = targetStrategieFiles[i];
+      const name = f instanceof File ? f.name : `Strategie_${i + 1}.docx`;
+      try {
+        const text = await extractTextFromSingleStrategieFile(f, name);
+        if (text && text.trim()) {
+          extractedSections.push(text.trim());
+        }
+      } catch (err) {
+        console.warn(`Konnte Strategiedatei "${name}" nicht extrahieren:`, err);
+      }
+    }
+    if (extractedSections.length > 0) {
+      finalStrategieText =
+        (finalStrategieText ? `${finalStrategieText}\n\n` : '') +
+        extractedSections.join('\n\n---\n\n');
     }
   }
 
-  // 3. Zusammenführen
+  // 3. Zusammenführen: Antragsmappe + Strategien
   const { antraege, strategyNotes, summary } = combineAntragsmappeAndStrategie(
     finalAntragsmappeText,
     finalStrategieText
@@ -525,16 +671,24 @@ export async function executeAutoSiPImport(options: {
     ? ' Die Geschäftsordnung am Ende der Antragsmappe wurde wie gewünscht ignoriert.'
     : '';
 
+  const filesNote =
+    targetStrategieFiles.length > 1
+      ? ` aus ${targetStrategieFiles.length} Strategiedateien`
+      : '';
+
   const message =
     antraege.length > 0
-      ? `✅ Automatisch importiert: ${summary.hauptAntraegeCount} Hauptanträge und ${summary.subAntraegeCount} dazugehörige Nebenanträge wurden erfolgreich verknüpft.${goNote} Alles bereit fürs Plenum!`
-      : 'Es konnten keine Anträge aus den bereitgestellten Dateien oder Texten extrahiert werden.';
+      ? `✅ Alles bereit fürs Plenum! ${summary.hauptAntraegeCount} Hauptanträge und ${summary.subAntraegeCount} dazugehörige Nebenanträge wurden${filesNote} erfolgreich kombiniert und importiert.${goNote}`
+      : 'Es konnten keine Anträge aus den bereitgestellten Dateien oder Texten extrahiert werden. Bitte prüfe, ob die PDF-Antragsmappe ausgewählt wurde.';
 
   return {
     success: antraege.length > 0,
     message,
     antraege,
     strategyNotes,
-    summary,
+    summary: {
+      ...summary,
+      strategyFilesCount: targetStrategieFiles.length,
+    },
   };
 }

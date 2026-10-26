@@ -759,7 +759,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 mb-6 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <span className="leading-relaxed">
-                Soll dieser Antrag nun auf allen Geräten angezeigt werden? Es ertönt ein akustischer Hinweis und das Blurry-Vollbildoverlay öffnet sich auf allen Bildschirmen.
+                Soll dieser Antrag nun auf allen Geräten angezeigt werden? Das Blurry-Vollbildoverlay öffnet sich sofort auf allen Bildschirmen im Plenum.
               </span>
             </div>
 
@@ -957,7 +957,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
         {/* Collapsible Left Sidebar (Sticky am linken Rand fixiert) */}
         <aside
           className={`transition-all duration-300 shrink-0 bg-slate-900/90 border border-slate-800 rounded-3xl p-3 sm:p-3.5 shadow-xl backdrop-blur md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-2rem)] md:overflow-y-auto z-20 ${
-            isSidebarCollapsed ? 'w-full md:w-16' : 'w-full md:w-60'
+            isSidebarCollapsed ? 'w-full md:w-16' : 'w-full md:w-64'
           }`}
         >
           {/* Sidebar Header & Toggle */}
@@ -991,7 +991,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('antraege')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                 currentSubTab === 'antraege'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -1030,7 +1030,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('past_antraege')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                 currentSubTab === 'past_antraege'
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -1062,7 +1062,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('strategy')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                 currentSubTab === 'strategy'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -1083,7 +1083,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('drive')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                 currentSubTab === 'drive'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -1104,7 +1104,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('memes')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                 currentSubTab === 'memes'
                   ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md shadow-pink-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
@@ -1137,7 +1137,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
               <button
                 type="button"
                 onClick={() => setCurrentSubTab('archive')}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full min-w-0 ${
                   currentSubTab === 'archive'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'text-slate-300 hover:bg-slate-800'

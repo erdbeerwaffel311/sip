@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Archive,
   Calendar,
@@ -25,7 +25,11 @@ import {
   deleteArchivedSession,
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
-import { executeAutoSiPImport, AutoImportResult } from '../utils/sipAutoImporter';
+import {
+  executeAutoSiPImport,
+  classifySiPFolderFiles,
+  AutoImportResult,
+} from '../utils/sipAutoImporter';
 
 /**
  * Berechnet intelligent den Folgetitel für ein Schüler:innenparlament:
@@ -88,10 +92,11 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [newSessionTitle, setNewSessionTitle] = useState('');
   const [newDriveFolderUrl, setNewDriveFolderUrl] = useState('');
   const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
-  const [strategieFile, setStrategieFile] = useState<File | null>(null);
+  const [strategieFiles, setStrategieFiles] = useState<File[]>([]);
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadArchives();
@@ -149,11 +154,37 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     }
   }
 
-  async function handleAutoImportFiles(mappe?: File | null, strat?: File | null) {
-    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
-    const targetStrat = strat !== undefined ? strat : strategieFile;
+  async function handleFolderSelect(files: FileList | File[] | null) {
+    if (!files || files.length === 0) return;
+    setIsProcessingFiles(true);
+    try {
+      const classified = classifySiPFolderFiles(files);
+      if (classified.antragsmappeFile) {
+        setAntragsmappeFile(classified.antragsmappeFile);
+      }
+      if (classified.strategieFiles.length > 0) {
+        setStrategieFiles(classified.strategieFiles);
+      }
+      const res = await executeAutoSiPImport({ files });
+      setImportResult(res);
+    } catch (err) {
+      console.error('Fehler beim automatischen Ordner-Import:', err);
+    } finally {
+      setIsProcessingFiles(false);
+    }
+  }
 
-    if (!targetMappe && !targetStrat) {
+  async function handleAutoImportFiles(mappe?: File | null, strats?: File[] | File | null) {
+    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
+    let targetStrats: File[] = [];
+    if (strats !== undefined) {
+      if (Array.isArray(strats)) targetStrats = strats;
+      else if (strats) targetStrats = [strats];
+    } else {
+      targetStrats = strategieFiles;
+    }
+
+    if (!targetMappe && targetStrats.length === 0) {
       setImportResult(null);
       return;
     }
@@ -162,7 +193,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     try {
       const res = await executeAutoSiPImport({
         antragsmappeFile: targetMappe || undefined,
-        strategieFile: targetStrat || undefined,
+        strategieFiles: targetStrats.length > 0 ? targetStrats : undefined,
       });
       setImportResult(res);
     } catch (err) {
@@ -192,7 +223,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
       setNewSessionTitle('');
       setNewDriveFolderUrl('');
       setAntragsmappeFile(null);
-      setStrategieFile(null);
+      setStrategieFiles([]);
       const importedMsg = importResult ? `\n\n${importResult.message}` : '';
       setImportResult(null);
       await loadArchives();
@@ -458,8 +489,42 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Lade die PDF-Antragsmappe und die Strategie-Datei (DOCX aus dem Ordner „Strategie“) hoch. Das System kombiniert automatisch den Antragstext mit der Strategie des jeweiligen Antrags anhand des gleichen Titels. Die Geschäftsordnung am Ende der Antragsmappe wird automatisch ignoriert.
+                  Lade den freigegebenen SiP-Ordner oder die PDF-Antragsmappe und die Strategie-Dateien (aus dem Unterordner „Strategie“) hoch. Das System kombiniert automatisch den Antragstext mit der Strategie des jeweiligen Antrags anhand des gleichen Titels. Die Geschäftsordnung am Ende der Antragsmappe wird automatisch ignoriert.
                 </p>
+
+                {/* 1-Klick SiP-Ordner Auswählen */}
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-500/30 space-y-2">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="text-left">
+                      <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <FolderOpen className="w-4 h-4 text-amber-400" />
+                        <span>Kompletten SiP-Ordner auswählen (1-Klick)</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">
+                        Wählt den freigegebenen Google Drive-Ordner mit Antragsmappe (.pdf) und Unterordner „Strategie“ (.docx) vollautomatisch aus.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => folderInputRef.current?.click()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-600/30 transition cursor-pointer shrink-0"
+                    >
+                      Ordner auswählen
+                    </button>
+                    <input
+                      ref={folderInputRef}
+                      type="file"
+                      {...({ webkitdirectory: '', directory: '' } as any)}
+                      multiple
+                      className="hidden"
+                      onChange={(e) => handleFolderSelect(e.target.files)}
+                    />
+                  </div>
+                </div>
+
+                <div className="text-center text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                  — oder Dateien manuell auswählen —
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   {/* File 1: Antragsmappe PDF */}
@@ -478,27 +543,30 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                       className="block w-full text-[11px] text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
                     />
                     <span className="text-[10px] text-slate-500 block truncate">
-                      {antragsmappeFile ? antragsmappeFile.name : 'z.B. 1. SiP Antragsmappe.pdf'}
+                      {antragsmappeFile ? antragsmappeFile.name : 'z.B. (Nummer). SiP Antragsmappe.pdf'}
                     </span>
                   </div>
 
-                  {/* File 2: Strategie DOCX / Text */}
+                  {/* File 2: Strategie DOCX / Text (Mehrfachauswahl möglich) */}
                   <div className="space-y-1">
                     <label className="block text-[11px] font-semibold text-slate-300">
-                      🎯 2. Strategie-Datei (DOCX / Text):
+                      🎯 2. Strategie-Dateien (DOCX / Text):
                     </label>
                     <input
                       type="file"
-                      accept=".docx,.txt"
+                      accept=".docx,.doc,.txt"
+                      multiple
                       onChange={async (e) => {
-                        const file = e.target.files?.[0] || null;
-                        setStrategieFile(file);
-                        await handleAutoImportFiles(undefined, file);
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        setStrategieFiles(files);
+                        await handleAutoImportFiles(undefined, files);
                       }}
                       className="block w-full text-[11px] text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
                     />
                     <span className="text-[10px] text-slate-500 block truncate">
-                      {strategieFile ? strategieFile.name : 'z.B. aus Unterordner "Strategie"'}
+                      {strategieFiles.length > 0
+                        ? `${strategieFiles.length} Strategiedatei(en) gewählt`
+                        : 'z.B. alle Dateien aus Unterordner "Strategie"'}
                     </span>
                   </div>
                 </div>

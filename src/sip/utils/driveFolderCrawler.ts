@@ -393,7 +393,7 @@ export async function resolveDriveFolderManifest(
 }
 
 /**
- * Lädt eine Datei über Googles CDN herunter (mit CORS-Proxy, Virus-Scan-Bypass & ohne Session-Auth)
+ * Lädt eine Datei über Googles CDN herunter (mit robuster CORS-Proxy-Fallback-Kette)
  */
 async function downloadDriveFileAsArrayBuffer(
   file: DriveFileInfo,
@@ -401,66 +401,53 @@ async function downloadDriveFileAsArrayBuffer(
 ): Promise<ArrayBuffer> {
   onProgress?.(`Lade ${file.name} herunter...`);
 
-  // 1. Session-Parameter wie &authuser=0 entfernen (führt bei anonymen Fetches zu 403-Fehlern)
-  let driveDownloadUrl = (
-    file.downloadUrl ||
-    `https://drive.usercontent.google.com/download?id=${file.id}&export=download`
-  ).replace(/[?&]authuser=\d+/gi, '');
-
-  // 2. Virenscan umgehen: &confirm=t zwingend anhängen
-  if (!driveDownloadUrl.includes('confirm=')) {
-    driveDownloadUrl += (driveDownloadUrl.includes('?') ? '&' : '?') + 'confirm=t';
-  }
-
+  const fileId = file.id;
   const isGoogleDoc =
-    file.mimeType === 'application/vnd.google-apps.document' || file.name.endsWith('.docx');
-  const docxExportUrl = `https://docs.google.com/document/d/${file.id}/export?format=docx`;
+    file.mimeType === 'application/vnd.google-apps.document' ||
+    (file.name.endsWith('.docx') && !file.name.endsWith('.pdf'));
 
-  const rawCandidates = [
-    driveDownloadUrl,
-    `https://drive.usercontent.google.com/download?id=${file.id}&export=download&confirm=t`,
-    ...(isGoogleDoc ? [docxExportUrl] : []),
+  // Die Basis-URL für Google Drive gemäß Vorgabe
+  const driveUrl = isGoogleDoc
+    ? `https://docs.google.com/document/d/${fileId}/export?format=docx`
+    : 'https://drive.google.com/uc?export=download&id=' + fileId + '&confirm=t';
+
+  // Kette von verschiedenen CORS-Proxys gemäß Vorgabe
+  const proxyUrls: string[] = [
+    'https://corsproxy.io/?' + encodeURIComponent(driveUrl),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(driveUrl),
+    'https://thingproxy.freeboard.io/fetch/' + encodeURIComponent(driveUrl),
+    // Fallback: Drive usercontent CDN & direkte URL
+    'https://corsproxy.io/?' + encodeURIComponent(`https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`),
+    driveUrl,
   ];
 
-  // 3. CORS-Proxy für Dateien erzwingen: Download-URLs über CORS-Proxy leiten
-  const candidateUrls: string[] = [];
-
-  // Proxies zuerst (für Browser-Clients, um CORS- und Bot-Sperren zu umgehen)
-  for (const raw of rawCandidates) {
-    candidateUrls.push(`https://corsproxy.io/?${encodeURIComponent(raw)}`);
-    candidateUrls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(raw)}`);
-  }
-
-  // Direkte URLs als Fallback (z.B. für Node.js oder direkte Freigaben)
-  for (const raw of rawCandidates) {
-    candidateUrls.push(raw);
-  }
-
   let lastStatus = 0;
-  for (const url of candidateUrls) {
+  for (const proxyUrl of proxyUrls) {
     try {
-      console.log(`[DOWNLOAD] ${new Date().toISOString()} | Datei: "${file.name}" | ID: ${file.id} | URL: ${url}`);
+      console.log(`[DOWNLOAD] ${new Date().toISOString()} | Datei: "${file.name}" | ID: ${fileId} | URL: ${proxyUrl}`);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-      const response = await fetch(url, { signal: controller.signal });
+      // 25 Sekunden Timeout für große PDF-Dateien gegen 408 Timeouts
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      const response = await fetch(proxyUrl, { signal: controller.signal });
       clearTimeout(timeout);
 
       lastStatus = response.status;
-      if (response.ok) {
+      if (response.status === 200) {
         const buffer = await response.arrayBuffer();
         if (buffer.byteLength > 100) {
           console.log(`[DOWNLOAD-OK] ${new Date().toISOString()} | Datei: "${file.name}" | Bytes: ${buffer.byteLength}`);
           return buffer;
         }
-      } else {
-        console.warn(`[DOWNLOAD-HTTP-${response.status}] ${new Date().toISOString()} | URL: ${url}`);
       }
-    } catch (err) {
-      console.warn(`[DOWNLOAD-FAIL] ${new Date().toISOString()} | URL: ${url}`, err);
+      console.warn('Proxy fehlgeschlagen, probiere nächsten...', proxyUrl);
+    } catch {
+      console.warn('Proxy fehlgeschlagen, probiere nächsten...', proxyUrl);
     }
   }
 
-  throw new Error(`Fehler beim Herunterladen von "${file.name}" (HTTP ${lastStatus}). Bitte prüfe, ob die Datei freigegeben ist.`);
+  throw new Error(
+    `Fehler beim Herunterladen von "${file.name}" (HTTP ${lastStatus}). Bitte prüfe, ob die Datei freigegeben ist.`
+  );
 }
 
 /**

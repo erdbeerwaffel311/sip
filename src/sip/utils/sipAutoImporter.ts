@@ -173,9 +173,24 @@ export function parseSiPFileNameMeta(fileName: string): {
 }
 
 /**
+ * Prüft, ob eine Zeile eine typische Kopf- oder Fußzeile der SiP-Antragsmappe ist
+ * (z.B. Seitenzahlen, Kopfzeile "Vorarlberger Schüler:innenparlament", "Antragsmappe").
+ */
+export function isHeaderOrFooterLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^---\s*seite\s*\d+\s*---\s*$/i.test(trimmed)) return true;
+  if (/^(?:vorarlberger\s+)?schüler(?:_|:|\*|\/)?innenparlament\s*$/i.test(trimmed)) return true;
+  if (/^(?:sip\s+)?antragsmappe(?:\s+\d+[\.\/]\s*sip)?\s*$/i.test(trimmed)) return true;
+  if (/^\d{1,3}\s*$/.test(trimmed)) return true; // Standalone Seitenzahlen
+  if (/^seite\s+\d+(?:\s*(?:von|\/)\s*\d+)?\s*$/i.test(trimmed)) return true;
+  return false;
+}
+
+/**
  * Extrahiert alle Hauptanträge aus dem Text der SiP-Antragsmappe.
- * Am Schluss befindliche Abschnitte zur Geschäftsordnung (GO) werden
- * automatisch erkannt und ignoriert.
+ * Filtert Kopf-/Fußzeilen vorab, trennt submitter und title strikt,
+ * extrahiert Forderungen separat und schneidet Begründungen nach den Forderungen NICHT ab.
  */
 export function parseAntragsmappeText(rawText: string): {
   hauptAntraege: ParsedHauptAntrag[];
@@ -188,7 +203,6 @@ export function parseAntragsmappeText(rawText: string): {
   const normalizedRaw = rawText.normalize('NFC');
 
   // 1. Geschäftsordnung am Schluss der Antragsmappe erkennen und abschneiden
-  // Regel: Am Schluss der SiP Antragsmappe findest du die Geschäftsordnung. Diese kommt NICHT in das Programm.
   const goRegex =
     /(?:(?:\r?\n){1,3}\s*(?:---\s*seite\s*\d+\s*---\s*)?(?:anhang\s*:?\s*)?geschäftsordnung(?:\s+des\s+vorarlberger\s+schüler(?:_|:|\*|\/)?innenparlaments)?|\bgeschäftsordnung\s*\(go\)\s*(?:\r?\n))/i;
   const goMatch = normalizedRaw.match(goRegex);
@@ -214,7 +228,7 @@ export function parseAntragsmappeText(rawText: string): {
   // Variante B: Klassische "Antrag 1:", "Hauptantrag 2:", "TOP 1" Überschriften
   if (rawBlocks.length <= 1) {
     const primaryRegex =
-      /(?=(?:^|\r?\n|---\s*seite\s*\d+\s*---\s*)(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?)\s*)/gi;
+      /(?=(?:^|\r?\n)(?:---\s*seite\s*\d+\s*---\s*\r?\n)?(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?)\s*)/gi;
     const primarySplit = cleanText
       .split(primaryRegex)
       .map((b) => b.trim())
@@ -224,7 +238,7 @@ export function parseAntragsmappeText(rawText: string): {
     }
   }
 
-  // Variante C: Titelzeile direkt vor "Antragsteller_in:" / "Antragssteller:in:" (echtes Vorarlberger SiP Layout)
+  // Variante C: Titelzeile direkt vor "Antragsteller_in:" / "Antragssteller:in:"
   if (rawBlocks.length <= 1) {
     const authorHeaderRegex =
       /(?=(?:^|\r?\n)(?:---\s*seite\s*\d+\s*---\s*\r?\n)?[^\r\n]{3,140}\r?\n\s*(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von)\s*[:\-])/gi;
@@ -237,10 +251,10 @@ export function parseAntragsmappeText(rawText: string): {
     }
   }
 
-  // Variante D: Nummerierte Titel "1. Titel" vor Antragsteller / Daher fordert
+  // Variante D: Fallback nummerierte Titel "1. Titel"
   if (rawBlocks.length <= 1) {
     const fallbackRegex =
-      /(?=(?:^|\r?\n|---\s*seite\s*\d+\s*---\s*)\d{1,2}\.\s+[A-ZÄÖÜ][^\r\n]{3,100}(?:\r?\n)+[^\r\n]*(?:antragsteller|schule|antragstext|daher fordert))/gi;
+      /(?=(?:^|\r?\n)(?:---\s*seite\s*\d+\s*---\s*\r?\n)?\d{1,2}\.\s+[A-ZÄÖÜ][^\r\n]{3,100}(?:\r?\n)+[^\r\n]*(?:antrags?steller|schule|antragstext|daher fordert))/gi;
     const fallbackSplit = cleanText
       .split(fallbackRegex)
       .map((b) => b.trim())
@@ -264,22 +278,26 @@ export function parseAntragsmappeText(rawText: string): {
       fileMetaNum = parsedMeta.motionNumber;
     }
 
-    const cleanedBlock = block
+    const strippedBlock = block
       .replace(/^---\s*Antrag\s*:\s*[^\r\n]+?\s*---/gi, '')
       .replace(/---\s*seite\s*\d+\s*---\s*/gi, '')
       .trim();
 
-    const lines = cleanedBlock
+    // Zeilen filtern und wiederkehrende Header/Footer vorab löschen
+    const lines = strippedBlock
       .split(/\r?\n/)
       .map((l) => l.trim())
-      .filter(Boolean);
+      .filter((l) => l.length > 0 && !isHeaderOrFooterLine(l));
+
     if (lines.length === 0) continue;
 
-    // Finde die Zeile, die die Antragsnummer oder den Antragskopf enthält
-    const explicitHeaderIndex = lines.findIndex((l) => /(?:(?:haupt)?antrag|top)\s*\d+/i.test(l));
+    // Finde Zeile des Antragstellers (submitter)
     const authorLineIndex = lines.findIndex((l) =>
       /^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]/i.test(l)
     );
+
+    // Finde expliziten Antragskopf (z.B. "Antrag 1: ...", "TOP 2")
+    const explicitHeaderIndex = lines.findIndex((l) => /(?:(?:haupt)?antrag|top)\s*\d+/i.test(l));
 
     let headerIndex = 0;
     if (explicitHeaderIndex >= 0 && (authorLineIndex === -1 || explicitHeaderIndex < authorLineIndex)) {
@@ -290,11 +308,11 @@ export function parseAntragsmappeText(rawText: string): {
 
     const headerLine = lines[headerIndex] || fileMetaTitle || lines[0];
 
-    // Ignoriere Deckblatt, BiDi-Kommentierungs-Einleitung, Inhaltsverzeichnisse oder GO-Titel
+    // Ignoriere Deckblatt, Inhaltsverzeichnis oder reine Vorab-Kommentare
     const hasMotionIndicators =
       /(?:(?:haupt)?antrag|top)\s*\d+/i.test(headerLine) ||
       authorLineIndex !== -1 ||
-      /antragstext|daher\s+fordert|forderungspunkt\s*\d+/i.test(cleanedBlock) ||
+      /antragstext|daher\s+fordert|forderungspunkt\s*\d+/i.test(strippedBlock) ||
       Boolean(fileBannerMatch);
 
     if (
@@ -304,140 +322,182 @@ export function parseAntragsmappeText(rawText: string): {
       continue;
     }
 
-    // Antragsnummer ermitteln
+    // 1. Antragsnummer isolieren
     const numMatch = headerLine.match(/\b(?:(?:haupt)?antrag|top)\s*(\d{1,2})\b/i);
     const motionNum = fileMetaNum || (numMatch ? parseInt(numMatch[1], 10) : counter);
     const lineOrParagraph = `Antrag ${motionNum}`;
 
-    // Titel ermitteln
+    // 2. Submitter (Antragsteller:in) isolieren – strikt getrennt vom Titel
+    let author = fileMetaAuthor || 'Schüler:innenparlament';
+    if (authorLineIndex >= 0) {
+      const match = lines[authorLineIndex].match(
+        /^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]\s*(.+)$/i
+      );
+      if (match && match[1]) {
+        author = match[1].replace(/^[^\wÄÖÜäöüß]+/, '').trim();
+      }
+    } else {
+      const authorMatch = strippedBlock.match(
+        /(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]\s*([^\r\n]+)/i
+      );
+      if (authorMatch && authorMatch[1]) {
+        author = authorMatch[1].replace(/^[^\wÄÖÜäöüß]+/, '').trim();
+      }
+    }
+
+    // 3. Titel isolieren – niemals Antragsteller-Namen einbinden!
     let cleanTitle = headerLine
       .replace(/^(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?|\d{1,2}\.\s*)/i, '')
       .trim();
 
-    if (
-      !cleanTitle &&
-      headerIndex >= 0 &&
-      headerIndex + 1 < lines.length &&
-      !/antragsteller|schule/i.test(lines[headerIndex + 1])
-    ) {
+    // Falls in der Headerzeile nur "Antrag 1:" stand: Titel aus Zeile davor/danach holen, NIEMALS Submitter-Zeile
+    if (!cleanTitle && headerIndex + 1 < lines.length && headerIndex + 1 !== authorLineIndex) {
       cleanTitle = lines[headerIndex + 1];
     }
     if (!cleanTitle && fileMetaTitle) {
       cleanTitle = fileMetaTitle;
     }
-    if (!cleanTitle && lines.length > 1 && !/antragsteller|schule/i.test(lines[1])) {
-      cleanTitle = lines[1];
+    if (!cleanTitle && lines.length > 0 && authorLineIndex !== 0) {
+      cleanTitle = lines[0];
     }
+
+    // Sicherheitsprüfung: Entferne versehentlich eingedrungene Submitter-Präfixe aus dem Titel
+    cleanTitle = cleanTitle
+      .replace(/^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von)\s*[:\-].*$/i, '')
+      .replace(/^(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?|\d{1,2}\.\s*)/i, '')
+      .trim();
+
     if (!cleanTitle) {
       cleanTitle = `Antrag ${motionNum}`;
     }
 
-    if (
-      cleanTitle.length < 5 &&
-      headerIndex >= 0 &&
-      headerIndex + 1 < lines.length &&
-      !/antragsteller|schule/i.test(lines[headerIndex + 1])
-    ) {
-      cleanTitle = lines[headerIndex + 1];
-    }
-
-    // Antragsteller:in ermitteln
-    let author = fileMetaAuthor || 'Schüler:innenparlament';
-    const authorMatch = cleanedBlock.match(
-      /(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]\s*([^\r\n]+)/i
-    );
-    if (authorMatch) {
-      author = authorMatch[1].replace(/^[^\wÄÖÜäöüß]+/, '').trim();
-    } else if (!fileMetaAuthor) {
-      const authorLine = lines.find((l) =>
-        /^[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+(?:\s*\([^)]+\))?$/.test(l)
-      );
-      if (authorLine && authorLine !== cleanTitle && !authorLine.includes('Antrag')) {
-        author = authorLine;
-      }
-    }
-
-    // Forderungspunkte extrahieren ("Daher fordert das Vorarlberger Schüler:innenparlament" / "Schüler_innenparlament")
+    // 4. Forderungen & Begründungstext trennen:
+    // Wichtig: Begründung nach den Forderungen NICHT abschneiden!
     const forderungspunkte: string[] = [];
-    const forderungIndex = cleanedBlock.search(
-      /(?:daher\s+fordert\s+(?:das\s+)?(?:vorarlberger\s+)?schüler(?:_|:|\*|\/)?innenparlament|schüler(?:_|:|\*|\/)?innenparlament\s+fordert|fordert\s*:)/i
+    const forderungMatch = strippedBlock.match(
+      /(?:daher\s+fordert\s+(?:das\s+)?(?:vorarlberger\s+)?schüler(?:_|:|\*|\/)?innenparlament(?:\s*[:\-])?|schüler(?:_|:|\*|\/)?innenparlament\s+fordert(?:\s*[:\-])?|fordert\s*[:\-])/i
     );
 
-    let content = cleanedBlock;
-    if (forderungIndex !== -1) {
-      content = cleanedBlock.slice(0, forderungIndex).trim();
-      const afterForderung = cleanedBlock.slice(forderungIndex);
-      const fpLines = afterForderung
+    let contentText = '';
+
+    if (forderungMatch && typeof forderungMatch.index === 'number') {
+      const forderungIndex = forderungMatch.index;
+      const beforeForderung = strippedBlock.slice(0, forderungIndex).trim();
+      const afterForderung = strippedBlock.slice(forderungIndex + forderungMatch[0].length);
+
+      // A. Text vor den Forderungen (Einleitung / Problemaufriss)
+      const leadLines = beforeForderung
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter(Boolean);
+        .filter((l) => l.length > 0 && !isHeaderOrFooterLine(l));
+
+      const filteredLeadLines = leadLines.filter((l) => {
+        if (l === headerLine || l === cleanTitle) return false;
+        if (/^(?:(?:haupt)?antrag\s*\d+|top\s*\d+)/i.test(l)) return false;
+        if (/^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von)\s*[:\-]/i.test(l)) return false;
+        return true;
+      });
+      const leadInText = filteredLeadLines.join('\n\n').trim();
+
+      // B. Forderungspunkte & Begründung nach den Forderungen parsen
+      const rawAfterLines = afterForderung
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !isHeaderOrFooterLine(l));
 
       const bulletRegex =
         /^(?:[0-9]+[\.\)]|[\u2022\u2023\u25CF\u25CB\u25AA\u25AB\u25E6\u2043\u2219\uF0B7\uF0A7\*\-–]|\([0-9]+\))\s*/;
 
-      for (let i = 1; i < fpLines.length; i++) {
-        const fpLine = fpLines[i];
-        // Überspringe Seitenumbrüche, Kopfzeilen oder Dokumenttitel
-        if (
-          /^(?:vorarlberger\s+)?schüler(?:_|:|\*|\/)?innenparlament|seite\s*\d+|antragsmappe|antragstext/i.test(
-            fpLine
-          )
-        ) {
+      let inDemands = true;
+      const reasoningAfterLines: string[] = [];
+
+      for (let i = 0; i < rawAfterLines.length; i++) {
+        const line = rawAfterLines[i];
+
+        // Überspringe isolierte Doppelpunkte oder Satzzeichen direkt nach der Einleitungsformel
+        if (/^[:\-–\s]+$/.test(line)) continue;
+
+        // Explizite Kennzeichnung des Beginns der Begründung nach den Forderungen
+        if (/^(?:begründung|sachverhalt|erläuterung|anmerkung)\s*[:\-]?\s*$/i.test(line)) {
+          inDemands = false;
+          reasoningAfterLines.push(line);
           continue;
         }
 
-        const isBulletOrNumbered = bulletRegex.test(fpLine);
-        if (isBulletOrNumbered) {
-          const cleanFp = fpLine.replace(bulletRegex, '').trim();
-          if (cleanFp.length > 0) {
-            forderungspunkte.push(cleanFp);
+        const isBullet = bulletRegex.test(line);
+
+        if (inDemands) {
+          if (isBullet) {
+            const cleanFp = line.replace(bulletRegex, '').trim();
+            if (cleanFp.length > 0) {
+              forderungspunkte.push(cleanFp);
+            }
+          } else if (forderungspunkte.length > 0) {
+            // Prüfe, ob dies eine Fortsetzung des vorherigen Forderungspunkts oder bereits Fließtext ist
+            if (line.length > 0 && !/^(?:begründung|sachverhalt)\b/i.test(line) && line.length < 80) {
+              forderungspunkte[forderungspunkte.length - 1] += ' ' + line;
+            } else {
+              inDemands = false;
+              reasoningAfterLines.push(line);
+            }
+          } else if (line.length > 3 && !/^(?:begründung|sachverhalt)\b/i.test(line)) {
+            // Unnummerierter erster Forderungspunkt
+            forderungspunkte.push(line);
+          } else {
+            inDemands = false;
+            reasoningAfterLines.push(line);
           }
-        } else if (forderungspunkte.length > 0) {
-          // Mehrzeilige Fortsetzung des vorangehenden Forderungspunkts
-          forderungspunkte[forderungspunkte.length - 1] += ' ' + fpLine;
-        } else if (fpLine.length > 5) {
-          // Unnummerierter erster Forderungspunkt
-          forderungspunkte.push(fpLine);
+        } else {
+          // Begründungstext nach den Forderungen
+          reasoningAfterLines.push(line);
         }
       }
+
+      const afterDemandsText = reasoningAfterLines.join('\n\n').trim();
+
+      // Text aus Einleitung vor Forderungen UND ausführlicher Begründung nach den Forderungen zusammenfügen
+      const textParts = [leadInText, afterDemandsText].filter(Boolean);
+      contentText = textParts.join('\n\n').trim();
+    } else {
+      // Kein "Daher fordert..." gefunden -> Gesamter Text ohne Header/Submitter ist Begründung
+      const allLines = strippedBlock
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !isHeaderOrFooterLine(l));
+
+      const filtered = allLines.filter((l) => {
+        if (l === headerLine || l === cleanTitle) return false;
+        if (/^(?:(?:haupt)?antrag\s*\d+|top\s*\d+)/i.test(l)) return false;
+        if (/^(?:antrags?steller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von)\s*[:\-]/i.test(l)) return false;
+        return true;
+      });
+      contentText = filtered.join('\n\n').trim();
     }
 
-    // Bereinige Redetext / Antragstext (entferne Titelzeile & Antragsteller-Zeile oben)
-    const contentLines = content
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const filteredContentLines = contentLines.filter((l, idx) => {
-      if (idx <= 2 && l === headerLine) return false;
-      if (idx <= 2 && /^(?:(?:haupt)?antrag\s*\d+|top\s*\d+)/i.test(l)) return false;
-      if (
-        idx <= 3 &&
-        /^(?:antragsteller(?:_?innen|_?in|:?innen|:?in)?|eingereicht\s*von|autor(?:_?in|:?in)?)\s*[:\-]/i.test(
-          l
-        )
-      ) {
-        return false;
-      }
-      return true;
-    });
-
-    content = filteredContentLines.join('\n\n').trim();
-    if (!content) content = cleanedBlock;
+    if (!contentText) contentText = strippedBlock;
 
     const finalIndex = counter++;
     const displayNum = fileMetaNum || finalIndex;
+    const finalCleanTitle = /^antrag\s*\d+/i.test(cleanTitle)
+      ? cleanTitle
+      : `Antrag ${displayNum}: ${cleanTitle}`;
 
-    hauptAntraege.push({
+    const parsedMotion: ParsedHauptAntrag = {
       index: displayNum,
       rawTitle: headerLine,
-      cleanTitle: /^antrag\s*\d+/i.test(cleanTitle)
-        ? cleanTitle
-        : `Antrag ${displayNum}: ${cleanTitle}`,
+      cleanTitle: finalCleanTitle,
       author,
       lineOrParagraph,
-      content,
+      content: contentText,
       forderungspunkte,
-    });
+    };
+
+    hauptAntraege.push(parsedMotion);
+
+    // Debug-Logging gemäß Vorgabe:
+    console.log(
+      `[PARSED] Typ: HAUPTANTRAG | Titel: ${parsedMotion.cleanTitle} | Submitter: ${parsedMotion.author} | Textlänge: ${parsedMotion.content.length} | Forderungen: ${parsedMotion.forderungspunkte.length}`
+    );
   }
 
   return { hauptAntraege, goExcluded };
@@ -621,26 +681,52 @@ export function parseStrategieText(rawText: string): {
         }
       }
 
-      // Wenn kein Text nach dem Doppelpunkt steht, nächste Zeile heranziehen (sofern kein neuer Nebenantrag/Header)
-      if (
-        !text &&
+      // Sammle den gesamten Text der Wortmeldung / des Nebenantrags:
+      // Auch mehrzeiliger Fließtext wird vollständig bis zum nächsten Eintrag erfasst!
+      const contentLines: string[] = [];
+      if (text) contentLines.push(text);
+
+      while (
         i + 1 < lines.length &&
         lines[i + 1] &&
         !SUB_MOTION_LINE_REGEX.test(lines[i + 1]) &&
         !/^forderungspunkt\s*\d+/i.test(lines[i + 1]) &&
-        !/^---\s*Strategie/i.test(lines[i + 1])
+        !/^---\s*Strategie/i.test(lines[i + 1]) &&
+        !/^(?:antrags?steller|strategie|abstimmungsempfehlung)\b/i.test(lines[i + 1])
       ) {
-        text = lines[i + 1];
+        contentLines.push(lines[i + 1]);
         i++;
       }
 
+      let fullContent = contentLines.join('\n').trim();
+
       // Bereinige den Text von vorangestellten Klammern mit Name/Platzhalter
-      if (text) {
-        text = text.replace(/^\([xX\?\s\-]+\)[:\s-]*/, '').trim();
+      if (fullContent) {
+        fullContent = fullContent.replace(/^\([xX\?\s\-]+\)[:\s-]*/, '').trim();
         if (claimedBy) {
           const escapedClaim = claimedBy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          text = text.replace(new RegExp(`^\\(${escapedClaim}\\-?\\)[:\\s-]*`, 'i'), '').trim();
+          fullContent = fullContent.replace(new RegExp(`^\\(${escapedClaim}\\-?\\)[:\\s-]*`, 'i'), '').trim();
         }
+      }
+
+      // Spezifische Behandlung für kurze Anträge wie "SA (Luka): FP5" oder "SA (FP6)"
+      const fpOnlyMatch = (fullContent || line).match(/(?:(?:zu\s+|zur\s+)?(?:fp|forderungspunkt)\s*(\d+))/i);
+      if (fpOnlyMatch && (!lineOrParagraph || lineOrParagraph.length === 0)) {
+        lineOrParagraph = `FP ${fpOnlyMatch[1]}`;
+      }
+
+      if (!fullContent || fullContent.length < 4 || /^(?:fp|forderungspunkt)\s*\d+$/i.test(fullContent)) {
+        const typeDesc =
+          detectedType === 'SA'
+            ? 'Streichungsantrag'
+            : detectedType === 'EA'
+            ? 'Erweiterungsantrag'
+            : detectedType === 'AAA'
+            ? 'Abänderungsantrag'
+            : 'Wortmeldung';
+        fullContent = lineOrParagraph
+          ? `${typeDesc} zu ${lineOrParagraph}`
+          : `${typeDesc} zum vorliegenden Hauptantrag`;
       }
 
       const shortType = detectedType === 'AAA' ? 'ÄA' : detectedType;
@@ -650,14 +736,21 @@ export function parseStrategieText(rawText: string): {
       // Titel enthält NUR den Typ & den Forderungspunktbezug – NIEMALS Personennamen oder "(XX)"
       const title = cleanSubMotionTitle(cleanFp ? `${typeLabel} (${cleanFp})` : typeLabel);
 
-      currentSection.subAntraege.push({
+      const parsedSub: ParsedSubAntrag = {
         type: detectedType,
         title,
-        content: text || line,
+        content: fullContent,
         lineOrParagraph,
         claimedBy: claimedBy || undefined,
         author: claimedBy || 'Delegierte:r',
-      });
+      };
+
+      currentSection.subAntraege.push(parsedSub);
+
+      // Debug-Logging gemäß Vorgabe:
+      console.log(
+        `[PARSED] Typ: ${parsedSub.type} | Titel: ${parsedSub.title} | Submitter: ${parsedSub.claimedBy || parsedSub.author || 'Delegierte:r'} | Textlänge: ${parsedSub.content.length} | Forderungen: 0`
+      );
       continue;
     }
 
@@ -864,23 +957,17 @@ export function combineAntragsmappeAndStrategie(
       h.author && h.author !== 'Schüler:innenparlament'
         ? h.author
         : strategyAuthor || h.author;
-    // Antragstext wird strikt aus der SiP-Antragsmappe übernommen, NIEMALS die Strategie als Antragstext!
-    let finalContent = h.content?.trim() || '';
-    if (!finalContent && finalFps.length > 0) {
-      finalContent =
-        `Daher fordert das Vorarlberger Schüler:innenparlament:\n` +
-        finalFps.map((fp, idx) => `${idx + 1}. ${fp}`).join('\n');
-    } else if (!finalContent) {
-      finalContent = 'Antragstext siehe SiP-Antragsmappe';
-    }
+    // Antragstext wird strikt aus der SiP-Antragsmappe übernommen (Text vor und Begründung nach Forderungen).
+    // Er wird NIEMALS durch die Forderungspunkte oder interne Strategie-Notizen ersetzt!
+    const finalContent = h.content?.trim() || 'Antragstext siehe SiP-Antragsmappe';
 
     const mainMotion: SipAntrag = {
       id: hauptAntragId,
       type: 'HAUPTANTRAG',
       title: h.cleanTitle,
       author: finalAuthor,
-      rede: finalContent,       // Echter Antragstext aus der SiP-Antragsmappe
-      content: finalContent,    // Echter Antragstext aus der SiP-Antragsmappe
+      rede: finalContent,       // Echter Antragstext / Begründung aus der SiP-Antragsmappe
+      content: finalContent,    // Echter Antragstext / Begründung aus der SiP-Antragsmappe
       forderungspunkte: finalFps,
       lineOrParagraph: h.lineOrParagraph || `Antrag ${hIdx + 1}`,
       isPreFab: true,
@@ -938,12 +1025,8 @@ export function combineAntragsmappeAndStrategie(
         ? sec.motionTitle
         : `Antrag ${motionNum}: ${cleanSecTitle}`;
 
-      // Antragstext darf NIEMALS aus den internen Strategie-Notizen bestehen
-      const extraContent =
-        sec.forderungspunkte && sec.forderungspunkte.length > 0
-          ? `Daher fordert das Vorarlberger Schüler:innenparlament:\n` +
-            sec.forderungspunkte.map((fp, idx) => `${idx + 1}. ${fp}`).join('\n')
-          : `Antragstext siehe SiP-Antragsmappe`;
+      // Antragstext darf NIEMALS aus den internen Strategie-Notizen oder reinen Forderungspunkten bestehen
+      const extraContent = 'Antragstext siehe SiP-Antragsmappe';
 
       const extraMain: SipAntrag = {
         id: extraHauptId,

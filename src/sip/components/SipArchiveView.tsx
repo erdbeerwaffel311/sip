@@ -86,9 +86,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [inspectingArchive, setInspectingArchive] = useState<SipArchivedSession | null>(null);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
-  const [newDriveFolderUrl, setNewDriveFolderUrl] = useState(
-    'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link'
-  );
+  const [newDriveFolderUrl, setNewDriveFolderUrl] = useState('');
   const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);

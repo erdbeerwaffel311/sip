@@ -23,7 +23,7 @@ interface MotionParserModalProps {
 export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   onClose,
   onImport,
-  initialDriveUrl = 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
+  initialDriveUrl = '',
 }) => {
   const [activeMode, setActiveMode] = useState<'online_drive' | 'raw_text'>('online_drive');
 

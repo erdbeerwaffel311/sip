@@ -213,6 +213,9 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
                       {...({ webkitdirectory: '', directory: '' } as any)}
                       multiple
                       className="hidden"
+                      onClick={(e) => {
+                        (e.currentTarget as HTMLInputElement).value = '';
+                      }}
                       onChange={(e) => handleFolderSelect(e.target.files)}
                     />
                   </div>

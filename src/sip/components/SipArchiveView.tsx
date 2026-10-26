@@ -98,6 +98,7 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [importProgress, setImportProgress] = useState<AutoImportProgress | null>(null);
   const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -396,11 +397,11 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
 
       {/* Modal: Neues SiP starten */}
       {showNewSessionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
-          <div className="relative w-full max-w-lg bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-6 sm:p-7 shadow-2xl text-white">
-            <div className="flex items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md animate-in fade-in overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-5 sm:p-7 shadow-2xl text-white my-auto max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center shrink-0">
                   <PlusCircle className="w-5 h-5" />
                 </div>
                 <div>
@@ -421,22 +422,23 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleConfirmNewSession} className="space-y-4">
-              {isCurrentSessionAlreadyArchived ? (
-                <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-2.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>
-                    Das bisherige SiP <strong>„{currentSession.title}“</strong> wurde bereits gesichert. Es ist keine neuerliche Archivierung erforderlich.
-                  </span>
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <span>
-                    Das derzeitige SiP <strong>„{currentSession.title}“</strong> wird mit allen Claims, eingereichten Anträgen und Protokolleinträgen automatisch im Archiv gesichert.
-                  </span>
-                </div>
-              )}
+            <form onSubmit={handleConfirmNewSession} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-4">
+                {isCurrentSessionAlreadyArchived ? (
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-2.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <span>
+                      Das bisherige SiP <strong>„{currentSession.title}“</strong> wurde bereits gesichert. Es ist keine neuerliche Archivierung erforderlich.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      Das derzeitige SiP <strong>„{currentSession.title}“</strong> wird mit allen Claims, eingereichten Anträgen und Protokolleinträgen automatisch im Archiv gesichert.
+                    </span>
+                  </div>
+                )}
 
               {/* Titel des neuen SiP */}
               <div>
@@ -502,13 +504,31 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                   Lade den freigegebenen SiP-Ordner oder die PDF-Antragsmappe und die Strategie-Dateien (aus dem Unterordner „Strategie“) hoch. Das System kombiniert automatisch den Antragstext mit der Strategie des jeweiligen Antrags anhand des gleichen Titels. Die Geschäftsordnung am Ende der Antragsmappe wird automatisch ignoriert.
                 </p>
 
-                {/* 1-Klick SiP-Ordner Auswählen */}
-                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-500/30 space-y-2">
+                {/* 1-Klick SiP-Ordner Auswählen / Drag & Drop Zone */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleFolderSelect(e.dataTransfer.files);
+                    }
+                  }}
+                  className={`p-4 rounded-2xl border-2 transition-all ${
+                    isDragging
+                      ? 'bg-purple-600/20 border-purple-400 ring-2 ring-purple-400'
+                      : 'bg-slate-900/90 border-purple-500/30'
+                  }`}
+                >
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div className="text-left">
                       <span className="text-xs font-bold text-white flex items-center gap-1.5">
                         <FolderOpen className="w-4 h-4 text-amber-400" />
-                        <span>Kompletten SiP-Ordner auswählen (1-Klick)</span>
+                        <span>Kompletten SiP-Ordner auswählen oder hierher ziehen</span>
                       </span>
                       <span className="text-[11px] text-slate-400 block mt-0.5">
                         Wählt den freigegebenen Google Drive-Ordner mit Antragsmappe (.pdf) und Unterordner „Strategie“ (.docx) vollautomatisch aus.
@@ -527,6 +547,9 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                       {...({ webkitdirectory: '', directory: '' } as any)}
                       multiple
                       className="hidden"
+                      onClick={(e) => {
+                        (e.currentTarget as HTMLInputElement).value = '';
+                      }}
                       onChange={(e) => handleFolderSelect(e.target.files)}
                     />
                   </div>
@@ -636,8 +659,9 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                   </div>
                 )}
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-3 pt-3 mt-3 border-t border-slate-800 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowNewSessionModal(false)}

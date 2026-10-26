@@ -116,14 +116,14 @@ export function parseAntragsmappeText(rawText: string): {
 
   // 2. Zerlege in Antragsblöcke (z.B. "Antrag 1:", "Antrag 2:", "TOP 1", etc.)
   let rawBlocks: string[] = [];
-  const primaryRegex = /(?=(?:^|\r?\n)(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?)\s*)/gi;
+  const primaryRegex = /(?=(?:^|\r?\n|---\s*seite\s*\d+\s*---\s*)(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?)\s*)/gi;
   const primarySplit = cleanText.split(primaryRegex).map((b) => b.trim()).filter((b) => b.length > 15);
 
   if (primarySplit.length > 1) {
     rawBlocks = primarySplit;
   } else {
     // Fallback falls Anträge als "1. Titel" formatiert sind
-    const fallbackRegex = /(?=(?:^|\r?\n)\d{1,2}\.\s+[A-ZÄÖÜ][^\r\n]{3,80}(?:\r?\n)+[^\r\n]*(?:antragsteller|schule|antragstext|daher fordert))/gi;
+    const fallbackRegex = /(?=(?:^|\r?\n|---\s*seite\s*\d+\s*---\s*)\d{1,2}\.\s+[A-ZÄÖÜ][^\r\n]{3,80}(?:\r?\n)+[^\r\n]*(?:antragsteller|schule|antragstext|daher fordert))/gi;
     const fallbackSplit = cleanText.split(fallbackRegex).map((b) => b.trim()).filter((b) => b.length > 15);
     rawBlocks = fallbackSplit.length > 1 ? fallbackSplit : primarySplit;
   }
@@ -132,68 +132,87 @@ export function parseAntragsmappeText(rawText: string): {
   let counter = 1;
 
   for (const block of rawBlocks) {
-    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const cleanedBlock = block.replace(/---\s*seite\s*\d+\s*---\s*/gi, '').trim();
+    const lines = cleanedBlock.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) continue;
 
-    const firstLine = lines[0];
+    // Finde die Zeile, die die Antragsnummer / den Antragskopf enthält
+    const headerIndex = lines.findIndex((l) => /(?:(?:haupt)?antrag|top)\s*\d+/i.test(l));
+    const headerLine = headerIndex >= 0 ? lines[headerIndex] : lines[0];
 
     // Ignoriere Deckblatt, Inhaltsverzeichnisse oder GO-Titel
     if (
-      /inhaltsverzeichnis|geschäftsordnung|antragsmappe/i.test(firstLine) ||
-      (!/^(?:haupt)?antrag\s*\d+|top\s*\d+/i.test(firstLine) && !/antragstext|daher fordert/i.test(block))
+      /inhaltsverzeichnis|geschäftsordnung|antragsmappe/i.test(headerLine) ||
+      (!/(?:(?:haupt)?antrag|top)\s*\d+/i.test(headerLine) && !/antragstext|daher fordert/i.test(cleanedBlock))
     ) {
       continue;
     }
 
     // Antragsnummer ermitteln
-    const numMatch = firstLine.match(/\b(?:(?:haupt)?antrag|top)\s*(\d{1,2})\b/i);
+    const numMatch = headerLine.match(/\b(?:(?:haupt)?antrag|top)\s*(\d{1,2})\b/i);
     const motionNum = numMatch ? parseInt(numMatch[1], 10) : counter;
     const lineOrParagraph = `Antrag ${motionNum}`;
 
     // Titel ermitteln
-    const rawTitle = firstLine;
-    let cleanTitle = firstLine.replace(/^(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?|\d{1,2}\.\s*)/i, '').trim();
-    if (!cleanTitle && lines.length > 1) {
+    let cleanTitle = headerLine.replace(/^(?:(?:haupt)?antrag\s*\d+[:.]?|top\s*\d+[:.]?|\d{1,2}\.\s*)/i, '').trim();
+    if (!cleanTitle && headerIndex >= 0 && headerIndex + 1 < lines.length && !/antragsteller|schule/i.test(lines[headerIndex + 1])) {
+      cleanTitle = lines[headerIndex + 1];
+    }
+    if (!cleanTitle && lines.length > 1 && !/antragsteller|schule/i.test(lines[1])) {
       cleanTitle = lines[1];
     }
     if (!cleanTitle) {
       cleanTitle = `Antrag ${motionNum}`;
     }
 
-    // Wenn der Titel sehr kurz ist und die zweite Zeile mehr Details hat
-    if (cleanTitle.length < 5 && lines.length > 1 && !/antragsteller|schule/i.test(lines[1])) {
-      cleanTitle = lines[1];
+    // Wenn der Titel sehr kurz ist und die nächste Zeile mehr Details hat
+    if (cleanTitle.length < 5 && headerIndex >= 0 && headerIndex + 1 < lines.length && !/antragsteller|schule/i.test(lines[headerIndex + 1])) {
+      cleanTitle = lines[headerIndex + 1];
     }
 
     // Antragsteller:in ermitteln
     let author = 'Schüler:innenparlament';
-    const authorMatch = block.match(/(?:antragsteller(?::?innen|:?in)?|eingereicht\s*von|autor(?::?in)?)\s*[:\-]\s*([^\r\n,]+)/i);
+    const authorMatch = cleanedBlock.match(/(?:antragsteller(?::?innen|:?in)?|eingereicht\s*von|autor(?::?in)?)\s*[:\-]\s*([^\r\n,]+)/i);
     if (authorMatch) {
       author = authorMatch[1].replace(/^[^\wÄÖÜäöüß]+/, '').trim();
     } else {
       // Suche nach typischen Namen im Kopf
       const authorLine = lines.find((l) => /^[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+(?:\s*\([^)]+\))?$/.test(l));
-      if (authorLine && authorLine !== cleanTitle) {
+      if (authorLine && authorLine !== cleanTitle && !authorLine.includes('Antrag')) {
         author = authorLine;
       }
     }
 
     // Forderungspunkte extrahieren ("Daher fordert das Vorarlberger Schüler:innenparlament")
     const forderungspunkte: string[] = [];
-    const forderungIndex = block.search(/(?:daher\s+fordert\s+(?:das\s+)?(?:vorarlberger\s+)?schüler:?innenparlament|schüler:?innenparlament\s+fordert|fordert\s*:)/i);
+    const forderungIndex = cleanedBlock.search(/(?:daher\s+fordert\s+(?:das\s+)?(?:vorarlberger\s+)?schüler:?innenparlament|schüler:?innenparlament\s+fordert|fordert\s*:)/i);
 
-    let content = block;
+    let content = cleanedBlock;
     if (forderungIndex !== -1) {
-      content = block.slice(0, forderungIndex).trim();
-      const afterForderung = block.slice(forderungIndex);
+      content = cleanedBlock.slice(0, forderungIndex).trim();
+      const afterForderung = cleanedBlock.slice(forderungIndex);
       const fpLines = afterForderung.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
       for (let i = 1; i < fpLines.length; i++) {
         const fpLine = fpLines[i];
-        // Erkennung von Aufzählungspunkten (1., •, -, a))
-        const cleanFp = fpLine.replace(/^(?:[0-9]+[\.\)]|[\u2022\u2023\u25E6\u2043\u2219\*\-–])\s*/, '').trim();
-        if (cleanFp.length > 5) {
-          forderungspunkte.push(cleanFp);
+        // Überspringe Seitenumbrüche, Kopfzeilen oder Dokumenttitel
+        if (/^(?:vorarlberger\s+)?schüler:?innenparlament|seite\s*\d+|antragsmappe|antragstext/i.test(fpLine)) {
+          continue;
+        }
+
+        // Erkennung von Aufzählungspunkten (1., •, -, a), etc.)
+        const isBulletOrNumbered = /^(?:[0-9]+[\.\)]|[\u2022\u2023\u25E6\u2043\u2219\*\-–]|\([0-9]+\))\s*/.test(fpLine);
+        if (isBulletOrNumbered) {
+          const cleanFp = fpLine.replace(/^(?:[0-9]+[\.\)]|[\u2022\u2023\u25E6\u2043\u2219\*\-–]|\([0-9]+\))\s*/, '').trim();
+          if (cleanFp.length > 0) {
+            forderungspunkte.push(cleanFp);
+          }
+        } else if (forderungspunkte.length > 0) {
+          // Mehrzeilige Fortsetzung des vorangehenden Forderungspunkts
+          forderungspunkte[forderungspunkte.length - 1] += ' ' + fpLine;
+        } else if (fpLine.length > 5) {
+          // Unnummerierter erster Forderungspunkt
+          forderungspunkte.push(fpLine);
         }
       }
     }
@@ -202,11 +221,11 @@ export function parseAntragsmappeText(rawText: string): {
     content = content
       .replace(/^(?:antrag\s*\d+[:.]?|antragsteller:?.*|\d{1,2}\..*)\r?\n/gmi, '')
       .trim();
-    if (!content) content = block;
+    if (!content) content = cleanedBlock;
 
     hauptAntraege.push({
       index: counter++,
-      rawTitle,
+      rawTitle: headerLine,
       cleanTitle: cleanTitle.startsWith('Antrag') ? cleanTitle : `Antrag ${counter - 1}: ${cleanTitle}`,
       author,
       lineOrParagraph,

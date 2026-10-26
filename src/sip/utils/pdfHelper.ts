@@ -19,10 +19,43 @@ export async function extractTextFromPdfArrayBuffer(buffer: ArrayBuffer): Promis
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const strings = content.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .filter(Boolean);
-    fullText += `\n\n--- SEITE ${i} ---\n` + strings.join(' ');
+    let pageText = '';
+    let lastY: number | null = null;
+
+    for (const item of content.items) {
+      if (!('str' in item)) continue;
+      const str = item.str;
+      const hasEOL = Boolean('hasEOL' in item && item.hasEOL);
+      const currentY = Array.isArray(item.transform) ? item.transform[5] : null;
+
+      if (!str && !hasEOL) continue;
+
+      // Wenn die Y-Position sich merklich ändert (> 4 Punkte) oder hasEOL gesetzt ist: Zeilenumbruch
+      if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 4) {
+        if (!pageText.endsWith('\n')) {
+          pageText += '\n';
+        }
+      } else if (
+        pageText.length > 0 &&
+        !pageText.endsWith('\n') &&
+        !pageText.endsWith(' ') &&
+        !str.startsWith(' ')
+      ) {
+        pageText += ' ';
+      }
+
+      pageText += str;
+
+      if (hasEOL && !pageText.endsWith('\n')) {
+        pageText += '\n';
+      }
+
+      if (currentY !== null) {
+        lastY = currentY;
+      }
+    }
+
+    fullText += `\n\n--- SEITE ${i} ---\n` + pageText.trim() + '\n';
   }
 
   return fullText;

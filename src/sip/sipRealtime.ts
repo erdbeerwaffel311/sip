@@ -1075,9 +1075,16 @@ class SipRealtimeService {
   /**
    * Startet ein neues SiP mit gewähltem Namen und Google Drive Ordner.
    * Archiviert das vorherige SiP automatisch, falls es noch nicht archiviert wurde.
+   * Unterstützt die direkte Übernahme automatisch importierter Haupt- und Nebenanträge.
    */
   public async startNewSession(
-    options: { title: string; driveFolderUrl?: string; skipArchive?: boolean },
+    options: {
+      title: string;
+      driveFolderUrl?: string;
+      skipArchive?: boolean;
+      antraege?: SipAntrag[];
+      strategyNotes?: string;
+    },
     settings?: AppSettings
   ): Promise<void> {
     this.lastLocalMutationAt = Date.now();
@@ -1088,11 +1095,15 @@ class SipRealtimeService {
       await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
     }
 
+    const initialAntraege = options.antraege || [];
+    const hauptCount = initialAntraege.filter((a) => a.type === 'HAUPTANTRAG').length;
+    const subCount = initialAntraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
+
     this.currentSession = {
       id: `session_${Date.now()}`,
       title: options.title.trim() || 'Neues Schüler:innenparlament (SiP)',
       driveFolderUrl: (options.driveFolderUrl || '').trim(),
-      strategyNotes: '',
+      strategyNotes: options.strategyNotes || '',
       activeAntragId: null,
       voteRecommendation: {
         type: 'KEINE',
@@ -1101,7 +1112,7 @@ class SipRealtimeService {
         updatedBy: 'Strategieführung',
         isPublished: false,
       },
-      antraege: [],
+      antraege: initialAntraege,
       memes: [],
       activityLog: [
         {
@@ -1109,8 +1120,51 @@ class SipRealtimeService {
           timestamp: new Date().toISOString(),
           performedBy: 'Strategieführung',
           action: 'SESSION_ARCHIVED',
-          details: `Neues SiP "${options.title.trim()}" gestartet. Drive-Ordner: ${options.driveFolderUrl?.trim() || 'noch keiner hinterlegt'}.`,
+          details: `Neues SiP "${options.title.trim()}" gestartet.${
+            initialAntraege.length > 0
+              ? ` Automatischer Import: ${hauptCount} Hauptanträge und ${subCount} Nebenanträge synchronisiert.`
+              : ' Kategorien geleert.'
+          } Drive-Ordner: ${options.driveFolderUrl?.trim() || 'noch keiner hinterlegt'}.`,
         },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveToStorage();
+    this.notify();
+
+    await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
+    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+  }
+
+  /**
+   * Importiert automatisch kombinierte Anträge und Strategie in die bestehende Sitzung
+   */
+  public async importCombinedAntraegeAndStrategy(
+    antraege: SipAntrag[],
+    strategyNotes?: string,
+    settings?: AppSettings
+  ): Promise<void> {
+    this.lastLocalMutationAt = Date.now();
+    const hauptCount = antraege.filter((a) => a.type === 'HAUPTANTRAG').length;
+    const subCount = antraege.filter((a) => a.type !== 'HAUPTANTRAG').length;
+
+    this.currentSession = {
+      ...this.currentSession,
+      antraege: [...this.currentSession.antraege, ...antraege],
+      strategyNotes: strategyNotes
+        ? this.currentSession.strategyNotes
+          ? `${this.currentSession.strategyNotes}\n\n${strategyNotes}`
+          : strategyNotes
+        : this.currentSession.strategyNotes,
+      activityLog: [
+        {
+          id: `act_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          performedBy: 'Strategieführung',
+          action: 'ANTRAG_IMPORTED',
+          details: `Automatischer SiP-Import: ${hauptCount} Hauptanträge und ${subCount} Nebenanträge erfolgreich synchronisiert.`,
+        },
+        ...(this.currentSession.activityLog || []),
       ],
       updatedAt: new Date().toISOString(),
     };

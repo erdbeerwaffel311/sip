@@ -25,6 +25,7 @@ interface AntragCardProps {
   isStrategieLeader: boolean;
   onClaim: (antragId: string) => void;
   onUnclaim: (antragId: string) => void;
+  onAssignClaim?: (antragId: string, memberName: string) => void;
   onActivate: (antrag: SipAntrag) => void;
   onEdit: (antrag: SipAntrag) => void;
   onDelete: (antragId: string) => void;
@@ -38,6 +39,7 @@ export const AntragCard: React.FC<AntragCardProps> = ({
   isStrategieLeader,
   onClaim,
   onUnclaim,
+  onAssignClaim,
   onActivate,
   onEdit,
   onDelete,
@@ -346,13 +348,79 @@ export const AntragCard: React.FC<AntragCardProps> = ({
                 <button
                   type="button"
                   onClick={() => onUnclaim(antrag.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 font-medium text-xs transition cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 font-medium text-xs transition cursor-pointer"
                   title="Claim freigeben"
                 >
                   <UserX className="w-3.5 h-3.5" />
                   <span>Claim abgeben</span>
                 </button>
               ) : null
+            )}
+
+            {/* Strategieführung Claim Controls: Claim entziehen oder vergeben */}
+            {antrag.type !== 'HAUPTANTRAG' && isStrategieLeader && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {antrag.claimedBy ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newName = prompt(
+                          `Redner:in für diesen Antrag neu zuweisen (aktuell: ${antrag.claimedBy}):`,
+                          antrag.claimedBy
+                        );
+                        if (newName && newName.trim()) {
+                          if (onAssignClaim) {
+                            onAssignClaim(antrag.id, newName.trim());
+                          } else {
+                            onClaim(antrag.id);
+                          }
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 text-xs font-semibold cursor-pointer transition"
+                      title={`Claim an andere Person neu vergeben (aktuell: ${antrag.claimedBy})`}
+                    >
+                      <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Neu vergeben</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(`Möchtest du den Claim von ${antrag.claimedBy} wirklich entziehen?`)) {
+                          onUnclaim(antrag.id);
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold cursor-pointer transition"
+                      title={`Claim von ${antrag.claimedBy} entziehen`}
+                    >
+                      <UserX className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Claim entziehen</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newName = prompt(
+                        "Wem soll dieser Antrag/Wortmeldung zugewiesen werden? (Name eingeben):"
+                      );
+                      if (newName && newName.trim()) {
+                        if (onAssignClaim) {
+                          onAssignClaim(antrag.id, newName.trim());
+                        } else {
+                          onClaim(antrag.id);
+                        }
+                      }
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 cursor-pointer transition"
+                    title="Claim an Delegierte:n vergeben"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Claim vergeben</span>
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Strategieführung Controls */}

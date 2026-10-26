@@ -22,6 +22,7 @@ interface StrategyNotesTabProps {
   currentUserName?: string;
   onClaim?: (antragId: string) => void;
   onUnclaim?: (antragId: string) => void;
+  onAssignClaim?: (antragId: string, memberName: string) => void;
 }
 
 export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
@@ -32,6 +33,7 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
   currentUserName = '',
   onClaim,
   onUnclaim,
+  onAssignClaim,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(strategyNotes);
@@ -241,28 +243,93 @@ export const StrategyNotesTab: React.FC<StrategyNotesTabProps> = ({
                     </p>
                   </div>
 
-                  {/* Claim Button: Nur für Mitglieder und nur für Nebenanträge */}
-                  {onClaim && onUnclaim && !isStrategieLeader && item.type !== 'HAUPTANTRAG' && (
+                  {/* Claim Button: Delegierte oder Strategieführung */}
+                  {onClaim && onUnclaim && item.type !== 'HAUPTANTRAG' && (
                     <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end">
-                      {!item.claimedBy ? (
-                        <button
-                          type="button"
-                          onClick={() => onClaim(item.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow transition cursor-pointer"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Redezeit claimen</span>
-                        </button>
-                      ) : isClaimedByMe ? (
-                        <button
-                          type="button"
-                          onClick={() => onUnclaim(item.id)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs transition cursor-pointer"
-                        >
-                          <UserX className="w-3.5 h-3.5" />
-                          <span>Claim abgeben</span>
-                        </button>
-                      ) : null}
+                      {!isStrategieLeader ? (
+                        !item.claimedBy ? (
+                          <button
+                            type="button"
+                            onClick={() => onClaim(item.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shadow transition cursor-pointer"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Redezeit claimen</span>
+                          </button>
+                        ) : isClaimedByMe ? (
+                          <button
+                            type="button"
+                            onClick={() => onUnclaim(item.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 text-xs transition cursor-pointer"
+                          >
+                            <UserX className="w-3.5 h-3.5" />
+                            <span>Claim abgeben</span>
+                          </button>
+                        ) : null
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {item.claimedBy ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newName = prompt(
+                                    `Redner:in für diesen Antrag neu zuweisen (aktuell: ${item.claimedBy}):`,
+                                    item.claimedBy
+                                  );
+                                  if (newName && newName.trim()) {
+                                    if (onAssignClaim) {
+                                      onAssignClaim(item.id, newName.trim());
+                                    } else {
+                                      onClaim(item.id);
+                                    }
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 text-xs font-semibold cursor-pointer transition"
+                                title={`Claim an andere Person neu vergeben (aktuell: ${item.claimedBy})`}
+                              >
+                                <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>Neu vergeben</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Möchtest du den Claim von ${item.claimedBy} wirklich entziehen?`)) {
+                                    onUnclaim(item.id);
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold cursor-pointer transition"
+                                title={`Claim von ${item.claimedBy} entziehen`}
+                              >
+                                <UserX className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Claim entziehen</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newName = prompt(
+                                  'Wem soll dieser Antrag/Wortmeldung zugewiesen werden? (Name eingeben):'
+                                );
+                                if (newName && newName.trim()) {
+                                  if (onAssignClaim) {
+                                    onAssignClaim(item.id, newName.trim());
+                                  } else {
+                                    onClaim(item.id);
+                                  }
+                                }
+                              }}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 cursor-pointer transition"
+                              title="Claim an Delegierte:n vergeben"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>Claim vergeben</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

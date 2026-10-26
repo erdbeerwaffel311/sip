@@ -14,8 +14,10 @@ import {
   Play,
   FolderOpen,
   Sparkles,
+  UploadCloud,
+  Check,
 } from 'lucide-react';
-import { SipArchivedSession, SipSession, ANTRAG_TYPE_CONFIG } from '../types';
+import { SipArchivedSession, SipSession, SipAntrag, ANTRAG_TYPE_CONFIG } from '../types';
 import { AppSettings } from '../../types';
 import {
   fetchArchivedSessions,
@@ -23,6 +25,7 @@ import {
   deleteArchivedSession,
 } from '../utils/archiveService';
 import { downloadSipProtocol } from '../utils/protocolExporter';
+import { executeAutoSiPImport, AutoImportResult } from '../utils/sipAutoImporter';
 
 /**
  * Berechnet intelligent den Folgetitel für ein Schüler:innenparlament:
@@ -62,7 +65,13 @@ interface SipArchiveViewProps {
   settings: AppSettings;
   currentUserName: string;
   onArchiveAndClearSession?: () => Promise<void>;
-  onStartNewSession: (options: { title: string; driveFolderUrl: string; skipArchive?: boolean }) => Promise<void>;
+  onStartNewSession: (options: {
+    title: string;
+    driveFolderUrl: string;
+    skipArchive?: boolean;
+    antraege?: SipAntrag[];
+    strategyNotes?: string;
+  }) => Promise<void>;
 }
 
 export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
@@ -78,6 +87,10 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
   const [newDriveFolderUrl, setNewDriveFolderUrl] = useState('');
+  const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
+  const [strategieFile, setStrategieFile] = useState<File | null>(null);
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+  const [importResult, setImportResult] = useState<AutoImportResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -136,6 +149,29 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
     }
   }
 
+  async function handleAutoImportFiles(mappe?: File | null, strat?: File | null) {
+    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
+    const targetStrat = strat !== undefined ? strat : strategieFile;
+
+    if (!targetMappe && !targetStrat) {
+      setImportResult(null);
+      return;
+    }
+
+    setIsProcessingFiles(true);
+    try {
+      const res = await executeAutoSiPImport({
+        antragsmappeFile: targetMappe || undefined,
+        strategieFile: targetStrat || undefined,
+      });
+      setImportResult(res);
+    } catch (err) {
+      console.error('Fehler beim automatischen Import:', err);
+    } finally {
+      setIsProcessingFiles(false);
+    }
+  }
+
   async function handleConfirmNewSession(e: React.FormEvent) {
     e.preventDefault();
     if (!newSessionTitle.trim()) {
@@ -149,17 +185,23 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
         title: newSessionTitle.trim(),
         driveFolderUrl: newDriveFolderUrl.trim(),
         skipArchive: isCurrentSessionAlreadyArchived,
+        antraege: importResult?.antraege || [],
+        strategyNotes: importResult?.strategyNotes || '',
       });
       setShowNewSessionModal(false);
       setNewSessionTitle('');
       setNewDriveFolderUrl('');
+      setAntragsmappeFile(null);
+      setStrategieFile(null);
+      const importedMsg = importResult ? `\n\n${importResult.message}` : '';
+      setImportResult(null);
       await loadArchives();
       alert(
         `Neues SiP "${newSessionTitle.trim()}" gestartet!\n${
           isCurrentSessionAlreadyArchived
             ? 'Das vorherige SiP war bereits archiviert.'
-            : 'Das vorherige SiP wurde automatisch im Archiv gesichert.'
-        }\nAlle Kategorien wurden geleert. Du kannst nun die Hauptanträge aus dem Google Drive Ordner importieren.`
+            : 'Das vorherige SiP wurde im Archiv gesichert.'
+        }${importedMsg}`
       );
     } finally {
       setIsSubmitting(false);
@@ -405,6 +447,87 @@ export const SipArchiveView: React.FC<SipArchiveViewProps> = ({
                 <p className="text-[11px] text-slate-400 mt-1.5">
                   Aus diesem Ordner können anschließend im Google Drive Tab die neuen Hauptanträge für das SiP importiert werden.
                 </p>
+              </div>
+
+              {/* Automatischer Import: Antragsmappe PDF + Strategie DOCX */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-950 to-indigo-950/40 border border-purple-500/40 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-300">
+                    Automatischer Antrags- & Strategie-Import
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Lade die PDF-Antragsmappe und die Strategie-Datei (DOCX aus dem Ordner „Strategie“) hoch. Das System kombiniert automatisch den Antragstext mit der Strategie des jeweiligen Antrags anhand des gleichen Titels. Die Geschäftsordnung am Ende der Antragsmappe wird automatisch ignoriert.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* File 1: Antragsmappe PDF */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-slate-300">
+                      📄 1. Antragsmappe (PDF):
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] || null;
+                        setAntragsmappeFile(file);
+                        await handleAutoImportFiles(file, undefined);
+                      }}
+                      className="block w-full text-[11px] text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
+                    />
+                    <span className="text-[10px] text-slate-500 block truncate">
+                      {antragsmappeFile ? antragsmappeFile.name : 'z.B. 1. SiP Antragsmappe.pdf'}
+                    </span>
+                  </div>
+
+                  {/* File 2: Strategie DOCX / Text */}
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-semibold text-slate-300">
+                      🎯 2. Strategie-Datei (DOCX / Text):
+                    </label>
+                    <input
+                      type="file"
+                      accept=".docx,.txt"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] || null;
+                        setStrategieFile(file);
+                        await handleAutoImportFiles(undefined, file);
+                      }}
+                      className="block w-full text-[11px] text-slate-400 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
+                    />
+                    <span className="text-[10px] text-slate-500 block truncate">
+                      {strategieFile ? strategieFile.name : 'z.B. aus Unterordner "Strategie"'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Import Status Alert */}
+                {isProcessingFiles && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300">
+                    <Sparkles className="w-4 h-4 animate-spin shrink-0" />
+                    <span>Dateien werden extrahiert, analysiert und Titel abgeglichen...</span>
+                  </div>
+                )}
+
+                {importResult && (
+                  <div
+                    className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-2.5 ${
+                      importResult.success
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                        : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block mb-0.5">
+                        {importResult.success ? 'Erfolgreich vorbereitet!' : 'Hinweis:'}
+                      </span>
+                      <span>{importResult.message}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

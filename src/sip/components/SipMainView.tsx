@@ -561,8 +561,9 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     sipRealtime.decideAntrag(antragId, decision, settings);
   }
 
-  function handleClaimAntrag(antragId: string) {
-    sipRealtime.claimAntrag(antragId, currentUserName, settings);
+  function handleClaimAntrag(antragId: string, memberName?: string) {
+    const targetUser = memberName || currentUserName;
+    sipRealtime.claimAntrag(antragId, targetUser, settings);
   }
 
   function handleUnclaimAntrag(antragId: string) {
@@ -607,8 +608,12 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
     sipRealtime.deleteAntrag(antragId, settings);
   }
 
-  function handleImportAntraege(imported: SipAntrag[]) {
-    sipRealtime.importAntraege(imported, settings);
+  function handleImportAntraege(imported: SipAntrag[], strategyNotes?: string) {
+    if (strategyNotes && strategyNotes.trim()) {
+      sipRealtime.importCombinedAntraegeAndStrategy(imported, strategyNotes, settings);
+    } else {
+      sipRealtime.importAntraege(imported, settings);
+    }
   }
 
   function handleUpdateStrategyNotes(notes: string) {
@@ -962,14 +967,14 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             }`}
           >
             {!isSidebarCollapsed && (
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden md:inline">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden md:inline truncate" title="Navigation">
                 Navigation
               </span>
             )}
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer hidden md:flex items-center justify-center"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer hidden md:flex items-center justify-center shrink-0"
               title={isSidebarCollapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
             >
               {isSidebarCollapsed ? (
@@ -986,19 +991,23 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('antraege')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                 currentSubTab === 'antraege'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
               } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
               title="Anträge & Wortmeldungen"
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <Gavel className="w-4 h-4 shrink-0" />
-                {!isSidebarCollapsed && <span>Anträge & Wortmeldungen</span>}
+                {!isSidebarCollapsed && (
+                  <span className="truncate block" title="Anträge & Wortmeldungen">
+                    Anträge & Wortmeldungen
+                  </span>
+                )}
               </div>
               {!isSidebarCollapsed && (
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 ml-1.5">
                   <span
                     className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                       currentSubTab === 'antraege'
@@ -1021,20 +1030,24 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('past_antraege')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                 currentSubTab === 'past_antraege'
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
               } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
               title="Vergangene Anträge (bereits abgestimmt)"
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <History className="w-4 h-4 shrink-0 text-emerald-400" />
-                {!isSidebarCollapsed && <span>Vergangene Anträge</span>}
+                {!isSidebarCollapsed && (
+                  <span className="truncate block" title="Vergangene Anträge">
+                    Vergangene Anträge
+                  </span>
+                )}
               </div>
               {!isSidebarCollapsed && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
                     currentSubTab === 'past_antraege'
                       ? 'bg-slate-950 text-emerald-300'
                       : 'bg-slate-800 text-slate-400'
@@ -1049,50 +1062,66 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
             <button
               type="button"
               onClick={() => setCurrentSubTab('strategy')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                 currentSubTab === 'strategy'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
               } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
               title="Strategie & Redner:innen"
             >
-              <Target className="w-4 h-4 shrink-0 text-purple-400" />
-              {!isSidebarCollapsed && <span>Strategie & Redner:innen</span>}
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <Target className="w-4 h-4 shrink-0 text-purple-400" />
+                {!isSidebarCollapsed && (
+                  <span className="truncate block" title="Strategie & Redner:innen">
+                    Strategie & Redner:innen
+                  </span>
+                )}
+              </div>
             </button>
 
             {/* 4. Google Drive Unterlagen */}
             <button
               type="button"
               onClick={() => setCurrentSubTab('drive')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                 currentSubTab === 'drive'
                   ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
               } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
               title="Google Drive Unterlagen"
             >
-              <FolderOpen className="w-4 h-4 shrink-0 text-amber-400" />
-              {!isSidebarCollapsed && <span>Drive Unterlagen</span>}
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <FolderOpen className="w-4 h-4 shrink-0 text-amber-400" />
+                {!isSidebarCollapsed && (
+                  <span className="truncate block" title="Google Drive Unterlagen">
+                    Drive Unterlagen
+                  </span>
+                )}
+              </div>
             </button>
 
             {/* 5. Meme-Feed 🎭 */}
             <button
               type="button"
               onClick={() => setCurrentSubTab('memes')}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                 currentSubTab === 'memes'
                   ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-md shadow-pink-500/20'
                   : 'text-slate-300 hover:bg-slate-800'
               } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-between'}`}
               title="Meme-Feed 🎭"
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <Smile className="w-4 h-4 shrink-0 text-pink-400" />
-                {!isSidebarCollapsed && <span>Meme-Feed 🎭</span>}
+                {!isSidebarCollapsed && (
+                  <span className="truncate block" title="Meme-Feed 🎭">
+                    Meme-Feed 🎭
+                  </span>
+                )}
               </div>
               {!isSidebarCollapsed && (
                 <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
                     currentSubTab === 'memes'
                       ? 'bg-white text-pink-900'
                       : 'bg-slate-800 text-slate-400'
@@ -1108,15 +1137,21 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
               <button
                 type="button"
                 onClick={() => setCurrentSubTab('archive')}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer whitespace-nowrap w-full ${
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer w-full ${
                   currentSubTab === 'archive'
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'text-slate-300 hover:bg-slate-800'
                 } ${isSidebarCollapsed ? 'md:justify-center' : 'justify-start'}`}
                 title="Archiv & Protokolle"
               >
-                <Archive className="w-4 h-4 shrink-0 text-amber-400" />
-                {!isSidebarCollapsed && <span>Archiv & Logs</span>}
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <Archive className="w-4 h-4 shrink-0 text-amber-400" />
+                  {!isSidebarCollapsed && (
+                    <span className="truncate block" title="Archiv & Protokolle">
+                      Archiv & Logs
+                    </span>
+                  )}
+                </div>
               </button>
             )}
           </nav>
@@ -1351,6 +1386,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                             currentUserName={currentUserName}
                             isStrategieLeader={true}
                             onClaim={handleClaimAntrag}
+                            onAssignClaim={(id, name) => handleClaimAntrag(id, name)}
                             onUnclaim={handleUnclaimAntrag}
                             onActivate={() => {}}
                             onEdit={(a) => setEditingAntrag(a)}
@@ -1490,6 +1526,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                           currentUserName={currentUserName}
                           isStrategieLeader={true}
                           onClaim={handleClaimAntrag}
+                          onAssignClaim={(id, name) => handleClaimAntrag(id, name)}
                           onUnclaim={handleUnclaimAntrag}
                           onActivate={(a) => setConfirmActivateAntrag(a)}
                           onEdit={(a) => setEditingAntrag(a)}
@@ -1537,6 +1574,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                       currentUserName={currentUserName}
                       isStrategieLeader={true}
                       onClaim={handleClaimAntrag}
+                      onAssignClaim={(id, name) => handleClaimAntrag(id, name)}
                       onUnclaim={handleUnclaimAntrag}
                       onActivate={(a) => setConfirmActivateAntrag(a)}
                       onEdit={(a) => setEditingAntrag(a)}
@@ -1815,6 +1853,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
                             currentUserName={currentUserName}
                             isStrategieLeader={false}
                             onClaim={handleClaimAntrag}
+                            onAssignClaim={(id, name) => handleClaimAntrag(id, name)}
                             onUnclaim={handleUnclaimAntrag}
                             onActivate={() => {}}
                             onEdit={() => {}}
@@ -1966,6 +2005,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
           onSaveNotes={handleUpdateStrategyNotes}
           currentUserName={currentUserName}
           onClaim={handleClaimAntrag}
+          onAssignClaim={(id, name) => handleClaimAntrag(id, name)}
           onUnclaim={handleUnclaimAntrag}
         />
       )}

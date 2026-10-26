@@ -72,6 +72,7 @@ export interface SipActivityLogEntry {
     | 'ANTRAG_DECIDED'
     | 'ANTRAG_EDITED'
     | 'ANTRAG_DELETED'
+    | 'ANTRAG_IMPORTED'
     | 'VOTE_REC_SET'
     | 'MEME_ADDED'
     | 'SESSION_ARCHIVED'

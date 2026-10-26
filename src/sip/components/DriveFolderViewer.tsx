@@ -138,10 +138,10 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
           </div>
           <div>
             <h4 className="text-sm font-bold text-white">
-              Anträge automatisch aus Google Docs einlesen
+              Anträge & Strategie automatisch importieren
             </h4>
             <p className="text-xs text-slate-300">
-              Kopiere einfach Text aus den Google Drive Dokumenten – das System erkennt WM, ÄA, EA, SA und GO-Anträge automatisch!
+              Kombiniert PDF-Antragsmappe und Strategie (DOCX) aus dem Drive-Ordner automatisch. Die Geschäftsordnung am Schluss wird ignoriert!
             </p>
           </div>
         </div>
@@ -152,7 +152,7 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
           className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-purple-600/30 shrink-0 transition cursor-pointer"
         >
           <Sparkles className="w-4 h-4" />
-          <span>Text scannen & importieren</span>
+          <span>Anträge & Strategie importieren</span>
         </button>
       </div>
 

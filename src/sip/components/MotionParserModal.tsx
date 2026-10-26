@@ -1,22 +1,66 @@
 import React, { useState } from 'react';
-import { X, Sparkles, CheckSquare, Square, FileText, Check, AlertCircle } from 'lucide-react';
+import {
+  X,
+  Sparkles,
+  CheckSquare,
+  Square,
+  FileText,
+  Check,
+  AlertCircle,
+  UploadCloud,
+  CheckCircle2,
+  FolderOpen,
+} from 'lucide-react';
 import { ANTRAG_TYPE_CONFIG, SipAntrag } from '../types';
 import { convertParsedToSipAntraege, parseAntraegeFromText, ParsedRawAntrag } from '../sipParser';
+import { executeAutoSiPImport, AutoImportResult } from '../utils/sipAutoImporter';
 
 interface MotionParserModalProps {
   onClose: () => void;
-  onImport: (antraege: SipAntrag[]) => void;
+  onImport: (antraege: SipAntrag[], strategyNotes?: string) => void;
 }
 
 export const MotionParserModal: React.FC<MotionParserModalProps> = ({
   onClose,
   onImport,
 }) => {
+  const [activeMode, setActiveMode] = useState<'auto_files' | 'raw_text'>('auto_files');
+
+  // Auto Files Mode
+  const [antragsmappeFile, setAntragsmappeFile] = useState<File | null>(null);
+  const [strategieFile, setStrategieFile] = useState<File | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [autoResult, setAutoResult] = useState<AutoImportResult | null>(null);
+
+  // Raw Text Mode
   const [inputText, setInputText] = useState('');
   const [parsedItems, setParsedItems] = useState<ParsedRawAntrag[]>([]);
   const [hasScanned, setHasScanned] = useState(false);
 
-  function handleScan() {
+  async function handleProcessAutoFiles(mappe?: File | null, strat?: File | null) {
+    const targetMappe = mappe !== undefined ? mappe : antragsmappeFile;
+    const targetStrat = strat !== undefined ? strat : strategieFile;
+
+    if (!targetMappe && !targetStrat) {
+      setAutoResult(null);
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const res = await executeAutoSiPImport({
+        antragsmappeFile: targetMappe || undefined,
+        strategieFile: targetStrat || undefined,
+      });
+      setAutoResult(res);
+    } catch (err) {
+      console.error('Fehler beim Extrahieren:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  function handleScanRawText() {
     const detected = parseAntraegeFromText(inputText);
     setParsedItems(detected);
     setHasScanned(true);
@@ -28,13 +72,18 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
     );
   }
 
-  function handleImport() {
-    const selected = parsedItems.filter((i) => i.selected);
-    if (selected.length === 0) return;
-
-    const sipAntraege = convertParsedToSipAntraege(selected, 'Google Docs Dokument');
-    onImport(sipAntraege);
-    onClose();
+  function handleCommitImport() {
+    if (activeMode === 'auto_files') {
+      if (!autoResult || autoResult.antraege.length === 0) return;
+      onImport(autoResult.antraege, autoResult.strategyNotes);
+      onClose();
+    } else {
+      const selected = parsedItems.filter((i) => i.selected);
+      if (selected.length === 0) return;
+      const sipAntraege = convertParsedToSipAntraege(selected, 'Google Docs Dokument');
+      onImport(sipAntraege);
+      onClose();
+    }
   }
 
   return (
@@ -47,9 +96,9 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-bold">Anträge aus Dokument importieren</h2>
+              <h2 className="text-lg sm:text-xl font-bold">SiP-Anträge automatisch importieren</h2>
               <p className="text-xs text-slate-400">
-                Automatische Erkennung von WM, ÄA, EA, SA & GO-Anträgen
+                Verknüpft Antragsmappe (PDF) mit Strategie (DOCX) & ignoriert Geschäftsordnung
               </p>
             </div>
           </div>
@@ -62,97 +111,221 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
           </button>
         </div>
 
+        {/* Mode Switcher Tabs */}
+        <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-950 border border-slate-800 mb-4 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveMode('auto_files')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeMode === 'auto_files'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <UploadCloud className="w-4 h-4" />
+            <span>Dateien kombinieren (PDF + DOCX)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMode('raw_text')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeMode === 'raw_text'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Freitext einfügen</span>
+          </button>
+        </div>
+
         {/* Content Body */}
         <div className="overflow-y-auto flex-1 pr-1 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Text aus dem SiP-Dokument / Google Doc hier einfügen:
-            </label>
-            <textarea
-              rows={6}
-              value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                setHasScanned(false);
-              }}
-              placeholder={`Füge hier den Text aus deinen SiP-Unterlagen ein. Beispiel:\n\n[ÄA] Zu Zeile 45: Streichung von "nur schulische Endgeräte" und Ergänzung von BYOD.\n\n[WM] Wortmeldung Simon zu Antrag 4: Mental Health Tage.\n\nAntrag auf Ende der Debatte`}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
-            />
-          </div>
+          {activeMode === 'auto_files' ? (
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-slate-950 to-indigo-950/40 border border-purple-500/40 space-y-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Lade die PDF-Antragsmappe (z.B. <strong className="text-white">„2. SiP Antragsmappe.pdf“</strong>) und die Strategie-Datei aus dem Ordner <strong className="text-white">„Strategie“</strong> (DOCX) hoch. Die Antragstexte werden automatisch den Strategien zugeordnet und die Geschäftsordnung am Schluss wird herausgefiltert.
+                </p>
 
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              disabled={!inputText.trim()}
-              onClick={handleScan}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition cursor-pointer shadow-md shadow-purple-600/20"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Dokument jetzt scannen</span>
-            </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* File 1: Antragsmappe PDF */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      📄 1. SiP Antragsmappe (PDF):
+                    </label>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] || null;
+                        setAntragsmappeFile(file);
+                        await handleProcessAutoFiles(file, undefined);
+                      }}
+                      className="block w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
+                    />
+                    <span className="text-[11px] text-slate-500 block truncate">
+                      {antragsmappeFile ? antragsmappeFile.name : 'z.B. (Nummer). SiP Antragsmappe.pdf'}
+                    </span>
+                  </div>
 
-            {hasScanned && (
-              <span className="text-xs font-medium text-slate-400">
-                {parsedItems.length} Antrag/Anträge erkannt
-              </span>
-            )}
-          </div>
-
-          {/* Results List */}
-          {hasScanned && (
-            <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Erkannte Anträge zum Importieren auswählen:
-              </h3>
-
-              {parsedItems.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-slate-950 text-center text-xs text-slate-400">
-                  Keine Anträge mit Standard-Kennungen (WM, ÄA, EA, SA, Ende Debatte etc.) gefunden.
+                  {/* File 2: Strategie DOCX */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      🎯 2. Strategie-Datei (DOCX):
+                    </label>
+                    <input
+                      type="file"
+                      accept=".docx,.txt"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] || null;
+                        setStrategieFile(file);
+                        await handleProcessAutoFiles(undefined, file);
+                      }}
+                      className="block w-full text-xs text-slate-400 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer bg-slate-900 rounded-xl border border-slate-800 p-1"
+                    />
+                    <span className="text-[11px] text-slate-500 block truncate">
+                      {strategieFile ? strategieFile.name : 'z.B. aus Ordner "Strategie"'}
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {parsedItems.map((item) => {
-                    const conf = ANTRAG_TYPE_CONFIG[item.type];
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => toggleItem(item.id)}
-                        className={`p-3 rounded-xl border transition cursor-pointer flex items-start gap-3 ${
-                          item.selected
-                            ? 'bg-purple-950/20 border-purple-500/50'
-                            : 'bg-slate-950/60 border-slate-800 opacity-60'
-                        }`}
-                      >
-                        <div className="mt-0.5 text-purple-400">
-                          {item.selected ? (
-                            <CheckSquare className="w-4 h-4" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded border ${conf.badgeColor}`}
-                            >
-                              {conf.shortLabel}
-                            </span>
-                            {item.lineOrParagraph && (
-                              <span className="text-[10px] text-slate-400">
-                                📍 {item.lineOrParagraph}
-                              </span>
-                            )}
+              </div>
+
+              {isProcessing && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300">
+                  <Sparkles className="w-4 h-4 animate-spin shrink-0" />
+                  <span>Dateien werden extrahiert und Anträge kombiniert...</span>
+                </div>
+              )}
+
+              {autoResult && (
+                <div
+                  className={`p-4 rounded-2xl border text-xs leading-relaxed space-y-2 ${
+                    autoResult.success
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                      : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-bold text-sm text-emerald-300">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    <span>Alles bereit für das Plenum!</span>
+                  </div>
+                  <p className="text-xs text-slate-200">{autoResult.message}</p>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+                    <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Hauptanträge:</span>
+                      <strong className="text-white text-sm">
+                        {autoResult.summary.hauptAntraegeCount}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Nebenanträge:</span>
+                      <strong className="text-white text-sm">
+                        {autoResult.summary.subAntraegeCount}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded-xl bg-slate-950/80 border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">Geschäftsordnung:</span>
+                      <strong className="text-emerald-400 text-xs">Automatisch ignoriert</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Text aus dem SiP-Dokument / Google Doc hier einfügen:
+                </label>
+                <textarea
+                  rows={6}
+                  value={inputText}
+                  onChange={(e) => {
+                    setInputText(e.target.value);
+                    setHasScanned(false);
+                  }}
+                  placeholder={`Füge hier den Text aus deinen SiP-Unterlagen ein. Beispiel:\n\n[ÄA] Zu Zeile 45: Streichung von "nur schulische Endgeräte" und Ergänzung von BYOD.\n\n[WM] Wortmeldung Simon zu Antrag 4: Mental Health Tage.\n\nAntrag auf Ende der Debatte`}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 text-xs sm:text-sm focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  disabled={!inputText.trim()}
+                  onClick={handleScanRawText}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm transition cursor-pointer shadow-md shadow-purple-600/20"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Dokument jetzt scannen</span>
+                </button>
+
+                {hasScanned && (
+                  <span className="text-xs font-medium text-slate-400">
+                    {parsedItems.length} Antrag/Anträge erkannt
+                  </span>
+                )}
+              </div>
+
+              {/* Results List */}
+              {hasScanned && (
+                <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Erkannte Anträge zum Importieren auswählen:
+                  </h3>
+
+                  {parsedItems.length === 0 ? (
+                    <div className="p-4 rounded-2xl bg-slate-950 text-center text-xs text-slate-400">
+                      Keine Anträge mit Standard-Kennungen gefunden.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {parsedItems.map((item) => {
+                        const conf = ANTRAG_TYPE_CONFIG[item.type] || ANTRAG_TYPE_CONFIG.SONSTIGES;
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => toggleItem(item.id)}
+                            className={`p-3 rounded-xl border transition cursor-pointer flex items-start gap-3 ${
+                              item.selected
+                                ? 'bg-purple-950/20 border-purple-500/50'
+                                : 'bg-slate-950/60 border-slate-800 opacity-60'
+                            }`}
+                          >
+                            <div className="mt-0.5 text-purple-400">
+                              {item.selected ? (
+                                <CheckSquare className="w-4 h-4" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded border ${conf.badgeColor}`}
+                                >
+                                  {conf.shortLabel}
+                                </span>
+                                {item.lineOrParagraph && (
+                                  <span className="text-[10px] text-slate-400">
+                                    📍 {item.lineOrParagraph}
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="text-xs font-bold text-white line-clamp-1">
+                                {item.title}
+                              </h4>
+                              <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
+                                {item.content}
+                              </p>
+                            </div>
                           </div>
-                          <h4 className="text-xs font-bold text-white line-clamp-1">
-                            {item.title}
-                          </h4>
-                          <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
-                            {item.content}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -164,20 +337,26 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white"
+            className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white cursor-pointer"
           >
             Abbrechen
           </button>
 
           <button
             type="button"
-            disabled={!hasScanned || parsedItems.filter((i) => i.selected).length === 0}
-            onClick={handleImport}
+            disabled={
+              activeMode === 'auto_files'
+                ? !autoResult || autoResult.antraege.length === 0
+                : !hasScanned || parsedItems.filter((i) => i.selected).length === 0
+            }
+            onClick={handleCommitImport}
             className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-xs sm:text-sm shadow-md transition cursor-pointer"
           >
             <Check className="w-4 h-4" />
             <span>
-              {parsedItems.filter((i) => i.selected).length} Antrag/Anträge ins SiP importieren
+              {activeMode === 'auto_files'
+                ? `${autoResult?.antraege.length || 0} Anträge jetzt importieren`
+                : `${parsedItems.filter((i) => i.selected).length} Anträge importieren`}
             </span>
           </button>
         </div>

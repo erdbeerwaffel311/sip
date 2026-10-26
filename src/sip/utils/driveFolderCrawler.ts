@@ -182,7 +182,7 @@ function toDriveFileInfo(entry: ParsedDriveEntry): DriveFileInfo {
   return {
     name: entry.name,
     id: entry.id,
-    downloadUrl: `https://drive.usercontent.google.com/download?id=${entry.id}`,
+    downloadUrl: `https://drive.usercontent.google.com/download?id=${entry.id}&export=download&confirm=t`,
   };
 }
 
@@ -393,7 +393,7 @@ export async function resolveDriveFolderManifest(
 }
 
 /**
- * Lädt eine Datei direkt über Googles CDN herunter (mit Fallback für Google Docs & CORS)
+ * Lädt eine Datei über Googles CDN herunter (mit CORS-Proxy, Virus-Scan-Bypass & ohne Session-Auth)
  */
 async function downloadDriveFileAsArrayBuffer(
   file: DriveFileInfo,
@@ -401,18 +401,50 @@ async function downloadDriveFileAsArrayBuffer(
 ): Promise<ArrayBuffer> {
   onProgress?.(`Lade ${file.name} herunter...`);
 
-  const candidateUrls = [
-    file.downloadUrl,
-    `https://drive.usercontent.google.com/download?id=${file.id}&export=download`,
-    `https://docs.google.com/document/d/${file.id}/export?format=docx`,
-    `https://corsproxy.io/?${encodeURIComponent(file.downloadUrl)}`,
+  // 1. Session-Parameter wie &authuser=0 entfernen (führt bei anonymen Fetches zu 403-Fehlern)
+  let driveDownloadUrl = (
+    file.downloadUrl ||
+    `https://drive.usercontent.google.com/download?id=${file.id}&export=download`
+  ).replace(/[?&]authuser=\d+/gi, '');
+
+  // 2. Virenscan umgehen: &confirm=t zwingend anhängen
+  if (!driveDownloadUrl.includes('confirm=')) {
+    driveDownloadUrl += (driveDownloadUrl.includes('?') ? '&' : '?') + 'confirm=t';
+  }
+
+  const isGoogleDoc =
+    file.mimeType === 'application/vnd.google-apps.document' || file.name.endsWith('.docx');
+  const docxExportUrl = `https://docs.google.com/document/d/${file.id}/export?format=docx`;
+
+  const rawCandidates = [
+    driveDownloadUrl,
+    `https://drive.usercontent.google.com/download?id=${file.id}&export=download&confirm=t`,
+    ...(isGoogleDoc ? [docxExportUrl] : []),
   ];
+
+  // 3. CORS-Proxy für Dateien erzwingen: Download-URLs über CORS-Proxy leiten
+  const candidateUrls: string[] = [];
+
+  // Proxies zuerst (für Browser-Clients, um CORS- und Bot-Sperren zu umgehen)
+  for (const raw of rawCandidates) {
+    candidateUrls.push(`https://corsproxy.io/?${encodeURIComponent(raw)}`);
+    candidateUrls.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(raw)}`);
+  }
+
+  // Direkte URLs als Fallback (z.B. für Node.js oder direkte Freigaben)
+  for (const raw of rawCandidates) {
+    candidateUrls.push(raw);
+  }
 
   let lastStatus = 0;
   for (const url of candidateUrls) {
     try {
       console.log(`[DOWNLOAD] ${new Date().toISOString()} | Datei: "${file.name}" | ID: ${file.id} | URL: ${url}`);
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+
       lastStatus = response.status;
       if (response.ok) {
         const buffer = await response.arrayBuffer();

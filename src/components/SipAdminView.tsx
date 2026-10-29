@@ -40,18 +40,6 @@ import {
   formatSecretForDisplay,
 } from '../utils/totp';
 
-export const SIP_MIGRATION_SQL = `-- Dedizierte SiP-Tabelle erstellen
-CREATE TABLE IF NOT EXISTS public.sip_state (
-    id TEXT PRIMARY KEY,
-    payload JSONB,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- RLS & Realtime für sip_state aktivieren
-ALTER TABLE public.sip_state ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Allow public all access on sip_state" ON public.sip_state;
-CREATE POLICY "Allow public all access on sip_state" ON public.sip_state FOR ALL USING (true) WITH CHECK (true);
-ALTER PUBLICATION supabase_realtime ADD TABLE public.sip_state;`;
 
 interface SipAdminViewProps {
   settings: AppSettings;
@@ -83,10 +71,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Settings state (General)
-  const [supabaseUrlInput, setSupabaseUrlInput] = useState(settings.supabaseUrl);
-  const [supabaseKeyInput, setSupabaseKeyInput] = useState(settings.supabaseAnonKey);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
 
   // TOTP Authenticator-App State
   const [showTotpSetupModal, setShowTotpSetupModal] = useState(false);
@@ -357,7 +342,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       } else {
         showBanner(`2FA-Bestätigungs-E-Mail wurde an ${settings.adminEmail} gesendet!`);
       }
-    } catch {
+    } catch (err) {
       setTwoFactorStage('code_sent');
       setTwoFactorError('ungültiges Passwort, bitte versuche es erneut!');
     } finally {
@@ -381,7 +366,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       } else {
         setTwoFactorError('ungültiges Passwort, bitte versuche es erneut!');
       }
-    } catch {
+    } catch (err) {
       setTwoFactorError('ungültiges Passwort, bitte versuche es erneut!');
     } finally {
       setTwoFactorLoading(false);
@@ -416,15 +401,6 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
     showBanner('Admin-Passwort, Strategieführungs-Passwort und 2FA-E-Mail wurden sicher aktualisiert!');
   }
 
-  function handleSaveDatabaseSettings(e: React.FormEvent) {
-    e.preventDefault();
-    onUpdateSettings({
-      ...settings,
-      supabaseUrl: supabaseUrlInput.trim(),
-      supabaseAnonKey: supabaseKeyInput.trim(),
-    });
-    showBanner('Datenbank-Verbindung erfolgreich gespeichert!');
-  }
 
   return (
     <div className="max-w-5xl mx-auto px-3 sm:px-6 py-4 space-y-6">
@@ -973,104 +949,40 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
           </div>
 
           {/* Cloud Database Sync Settings */}
-          <form
-            onSubmit={handleSaveDatabaseSettings}
-            className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4 text-xs sm:text-sm"
-          >
-            <h3 className="font-bold text-base mb-1">Supabase Echtzeit-Cloud & Synchronisation</h3>
-            <p className="text-xs text-slate-400 mb-2">
-              Alle Benutzer, Konten und Anträge werden live über die Supabase-Datenbank synchronisiert.
-            </p>
-
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                Supabase Project URL
-              </label>
-              <input
-                type="text"
-                required
-                value={supabaseUrlInput}
-                onChange={(e) => setSupabaseUrlInput(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                Supabase Anon Key
-              </label>
-              <input
-                type="password"
-                required
-                value={supabaseKeyInput}
-                onChange={(e) => setSupabaseKeyInput(e.target.value)}
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white font-mono text-xs"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="py-2.5 px-5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition cursor-pointer"
-            >
-              Datenbank-Verbindung speichern
-            </button>
-          </form>
-
-          {/* Supabase Tabellen-Architektur (sip_state) */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl text-white space-y-4 text-xs sm:text-sm">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-base">Datenbank-Tabelle (sip_state)</h3>
+                <h3 className="font-bold text-base mb-0.5">PocketBase Echtzeit-Cloud & Synchronisation</h3>
                 <p className="text-xs text-slate-400">
-                  Dedizierte SiP-Tabelle <code className="text-sky-300">sip_state</code> für das Schüler:innenparlament
+                  Alle Benutzer, Konten und Anträge werden live über PocketBase synchronisiert.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-2 text-xs text-slate-300 leading-relaxed bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <p>
-                <strong>Architektur:</strong> Das Schüler:innenparlament nutzt die eigenständige Tabelle <code className="text-sky-300">sip_state</code> mit den Spalten <code className="text-emerald-300">id</code> und <code className="text-emerald-300">payload</code>.
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-slate-300 pt-1">
-                <li><strong className="text-emerald-300">Aktive SiP-Tabelle (sip_state):</strong> Der Programmcode liest, schreibt und lauscht via Realtime einheitlich und direkt auf <code className="text-emerald-300">sip_state</code>.</li>
-                <li><strong className="text-sky-300">Echtzeit-Synchronisation:</strong> Änderungen werden sofort per Supabase Realtime an alle verbundenen Plenar-Geräte übertragen.</li>
-              </ul>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="font-semibold text-slate-200 text-xs">
-                  1-Klick SQL-Skript (in Supabase Dashboard &gt; SQL Editor ausführen):
+            <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs">
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">
+                  PocketBase Backend Server-URL
                 </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(SIP_MIGRATION_SQL);
-                    setCopiedSql(true);
-                    setTimeout(() => setCopiedSql(false), 3000);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  {copiedSql ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-emerald-300">SQL kopiert!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>SQL kopieren</span>
-                    </>
-                  )}
-                </button>
+                <div className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-sky-400 font-mono text-xs font-semibold flex items-center justify-between">
+                  <span>https://api.sip.schuelerunion-vorarlberg.at</span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                    Aktiv verbunden
+                  </span>
+                </div>
               </div>
 
-              <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed max-h-48">
-                {SIP_MIGRATION_SQL}
-              </pre>
+              <div>
+                <label className="block text-slate-400 font-semibold mb-1">
+                  Collection & Datenstruktur
+                </label>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  Collection <code className="text-emerald-300">sip_state</code> mit Standard-Spalten <code className="text-sky-300">id</code>, <code className="text-sky-300">created</code>, <code className="text-sky-300">updated</code> und Nutzdaten in <code className="text-amber-300">payload</code> (JSON).
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -10,6 +10,15 @@ export interface MemberAccount {
   notes?: string;
 }
 
+export interface SipStateRecord<T = any> {
+  id: string;
+  payload: T;
+  created?: string;
+  updated?: string;
+  collectionId?: string;
+  collectionName?: string;
+}
+
 export interface AppSettings {
   clubName: string;
   adminPassword: string;
@@ -19,8 +28,9 @@ export interface AppSettings {
   totpEnabled?: boolean;
   allowedMembers: string[];
   memberAccounts: MemberAccount[];
-  supabaseUrl: string;
-  supabaseAnonKey: string;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  pocketbaseUrl?: string;
 }
 
 export const DEFAULT_ALLOWED_MEMBERS: string[] = [
@@ -153,7 +163,5 @@ export const DEFAULT_SIP_SETTINGS: AppSettings = {
     isExternal: false,
     expiresAt: null,
   })),
-  supabaseUrl: 'https://ofdqsfkuxiikxygthnov.supabase.co',
-  supabaseAnonKey:
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mZHFzZmt1eGlpa3h5Z3Robm92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4MzYzMzAsImV4cCI6MjEwODQxMjMzMH0.xU0FNyWPpmA7A25UqOFcbV3QeAA6T3xk4dV25HdqImk',
+  pocketbaseUrl: 'https://api.sip.schuelerunion-vorarlberg.at',
 };

@@ -1,4 +1,3 @@
-import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import {
   DEFAULT_SIP_SESSION,
   SipAntrag,
@@ -8,14 +7,14 @@ import {
   VoteRecommendation,
   SipActivityLogEntry,
 } from './types';
-import { AppSettings } from '../types';
-import { getSupabaseClient, SIP_DATABASE_TABLE } from '../utils/supabaseSync';
+import { AppSettings, SipStateRecord } from '../types';
+import { pb, SIP_DATABASE_TABLE } from '../utils/supabaseSync';
 import { archiveCurrentSession } from './utils/archiveService';
 
-export const SIP_STORAGE_KEY = 'sip_current_session_v1';
+export const SIP_STORAGE_KEY = 'sip_session_state_v1';
 export const SIP_NOTIFICATION_STORAGE_KEY = 'sip_recent_notifications_v1';
 export const SIP_REALTIME_CHANNEL_NAME = 'sip-live-updates';
-export const SIP_DB_ROW_ID = 'current_session';
+export const SIP_DB_ROW_ID = 'currentsession0';
 export { SIP_DATABASE_TABLE };
 
 export type SipRealtimeMessage =
@@ -31,7 +30,7 @@ export type SipRealtimeMessage =
 
 class SipRealtimeService {
   private localChannel: BroadcastChannel | null = null;
-  private supabaseChannel: RealtimeChannel | null = null;
+  private isPocketBaseSubscribed = false;
   private currentSession: SipSession = DEFAULT_SIP_SESSION;
   private listeners: Set<(session: SipSession) => void> = new Set();
   private notificationListeners: Set<(notif: SipNotification) => void> = new Set();
@@ -64,10 +63,6 @@ class SipRealtimeService {
   private isSyncingToSupabase = false;
   private pendingSyncSession: { settings?: AppSettings; session: SipSession } | null = null;
 
-  /**
-   * Erzeugt einen streng monoton steigenden ISO-Timestamp (immer > currentSession.updatedAt),
-   * damit lokale Mutationen niemals denselben oder einen kleineren Timestamp haben.
-   */
   private nextTimestamp(): string {
     const now = Date.now();
     const prev = this.currentSession?.updatedAt
@@ -82,7 +77,7 @@ class SipRealtimeService {
       .filter((a) => !a.isPreFab || a.claimedBy || a.isActive || a.id === session.activeAntragId || a.isEditedByAdmin || a.plenumResult)
       .map((a) => {
         if (a.isPreFab && !a.isEditedByAdmin) {
-          return {
+          const minimalPreFab: SipAntrag = {
             id: a.id,
             type: a.type,
             title: a.title,
@@ -97,7 +92,8 @@ class SipRealtimeService {
             plenumResult: a.plenumResult || null,
             plenumResultAt: a.plenumResultAt || null,
             content: '',
-          } as SipAntrag;
+          };
+          return minimalPreFab;
         }
         return a;
       });
@@ -116,15 +112,14 @@ class SipRealtimeService {
       activeId = activeId.replace('antrag_top_', 'antrag_');
     }
 
-    // Wenn es sich um eine archivierte, neu gestartete oder mit importierten Anträgen befüllte Sitzung handelt:
-    // Keine alten Vorlage-Anträge oder alten Memes hineinmischen, sondern exakt die Session-Daten verwenden!
     const hasImportedMotions =
       Array.isArray(session.antraege) &&
       session.antraege.length > 0 &&
       (session.antraege.some((a) => !a.isPreFab) ||
         session.antraege.length !== DEFAULT_SIP_SESSION.antraege.length ||
         session.antraege[0]?.title !== DEFAULT_SIP_SESSION.antraege[0]?.title);
-    const isOriginalTemplate = session.id === 'sip_current_session' && !hasImportedMotions;
+    const isOriginalTemplate = session.id === 'currentsession0' && !hasImportedMotions;
+    
     if ((!isOriginalTemplate && session.id) || hasImportedMotions) {
       return {
         id: session.id || `session_${Date.now()}`,
@@ -160,6 +155,7 @@ class SipRealtimeService {
         plenumResultAt?: string | null;
       }
     >();
+    
     (session.antraege || []).forEach((a) => {
       const cleanId = a.id.replace('antrag_top_', 'antrag_');
       if (a.claimedBy || a.isActive || a.plenumResult) {
@@ -201,7 +197,6 @@ class SipRealtimeService {
 
   private applyCloudSession(cloudSession: SipSession, forceOverwrite = false) {
     if (!cloudSession) return;
-    // Strikte Blockade veralteter oder identischer Payloads
     if (
       !forceOverwrite &&
       cloudSession.updatedAt &&
@@ -216,26 +211,25 @@ class SipRealtimeService {
     const newActiveId = merged.activeAntragId;
     const isNewActive = Boolean(newActiveId && newActiveId !== prevActiveId);
 
-    // 1. Claims diffen: Wenn jemand claimt, überall Benachrichtigung triggern
     if (this.hasLoadedCloudSession && this.currentSession.antraege) {
       merged.antraege.forEach((newA) => {
         if (newA.claimedBy) {
           const oldA = this.currentSession.antraege?.find((a) => a.id === newA.id);
           if (!oldA || oldA.claimedBy !== newA.claimedBy) {
-            this.triggerNotification({
+            const claimNotif: SipNotification = {
               id: `claim_${newA.id}_${newA.claimedBy}`,
               title: '📢 Antrag geclaimed!',
               message: `${newA.claimedBy} hat "${newA.title}" geclaimed.`,
               type: 'claim',
               timestamp: new Date().toISOString(),
               antragId: newA.id,
-            });
+            };
+            this.triggerNotification(claimNotif);
           }
         }
       });
     }
 
-    // 2. Abstimmungsempfehlung diffen: Wenn veröffentlicht oder geändert, überall Benachrichtigung triggern
     if (this.hasLoadedCloudSession) {
       const oldRec = this.currentSession.voteRecommendation;
       const newRec = merged.voteRecommendation;
@@ -249,7 +243,7 @@ class SipRealtimeService {
           oldRec.updatedAt !== newRec.updatedAt ||
           oldRec.note !== newRec.note)
       ) {
-        this.triggerNotification({
+        const voteNotif: SipNotification = {
           id: `vote_${newRec.updatedAt || Date.now()}_${newRec.type}`,
           title: `🗳️ Abstimmungsempfehlung: ${newRec.type}`,
           message: newRec.note
@@ -257,11 +251,11 @@ class SipRealtimeService {
             : `Empfehlung: ${newRec.type}`,
           type: 'vote',
           timestamp: new Date().toISOString(),
-        });
+        };
+        this.triggerNotification(voteNotif);
       }
     }
 
-    // 3. Neu eingereichte Nebenanträge von Mitgliedern
     if (this.hasLoadedCloudSession && this.currentSession.antraege) {
       const oldCustomIds = new Set(
         (this.currentSession.antraege || [])
@@ -272,38 +266,38 @@ class SipRealtimeService {
         .filter((a) => !a.isPreFab && a.id.startsWith('antrag_custom_'))
         .forEach((newCustom) => {
           if (!oldCustomIds.has(newCustom.id)) {
-            this.triggerNotification({
+            const submitNotif: SipNotification = {
               id: `submit_${newCustom.id}`,
               title: '📝 Neuer Nebenantrag eingereicht',
               message: `${newCustom.author} hat einen neuen Antrag eingereicht: "${newCustom.title}"`,
               type: 'motion',
               timestamp: new Date().toISOString(),
               antragId: newCustom.id,
-            });
+            };
+            this.triggerNotification(submitNotif);
           }
         });
     }
 
-    // 4. Plenum Decision diffen: Wurde ein Antrag als ANGENOMMEN oder ABGELEHNT gekennzeichnet?
     if (this.hasLoadedCloudSession && this.currentSession.antraege) {
       merged.antraege.forEach((newA) => {
         if (newA.plenumResult) {
           const oldA = this.currentSession.antraege?.find((a) => a.id === newA.id);
           if (!oldA || oldA.plenumResult !== newA.plenumResult) {
-            this.triggerNotification({
+            const decisionNotif: SipNotification = {
               id: `decision_${newA.id}_${newA.plenumResult}`,
               title: newA.plenumResult === 'ANGENOMMEN' ? '🎉 Antrag angenommen!' : '❌ Antrag abgelehnt',
               message: `Antrag "${newA.title}" wurde vom Plenum ${newA.plenumResult === 'ANGENOMMEN' ? 'angenommen' : 'abgelehnt'}.`,
               type: newA.plenumResult === 'ANGENOMMEN' ? 'vote' : 'system',
               timestamp: new Date().toISOString(),
               antragId: newA.id,
-            });
+            };
+            this.triggerNotification(decisionNotif);
           }
         }
       });
     }
 
-    // Supabase ist die offizielle Single Source of Truth für alle Teilnehmer im Plenum
     this.hasLoadedCloudSession = true;
     this.currentSession = merged;
     this.notify();
@@ -312,14 +306,15 @@ class SipRealtimeService {
       const newlyActiveAntrag = merged.antraege.find((a) => a.id === newActiveId);
       if (newlyActiveAntrag) {
         this.triggerBlurPopup(newlyActiveAntrag);
-        this.triggerNotification({
+        const activeNotif: SipNotification = {
           id: `notif_${Date.now()}`,
           title: '🚨 Neuer Antrag aufgerufen!',
           message: `${newlyActiveAntrag.title} wird jetzt im Parlament verhandelt.`,
           type: 'motion',
           timestamp: new Date().toISOString(),
           antragId: newlyActiveAntrag.id,
-        });
+        };
+        this.triggerNotification(activeNotif);
       }
     }
   }
@@ -339,21 +334,15 @@ class SipRealtimeService {
         (this.currentSession.id !== DEFAULT_SIP_SESSION.id ||
           this.currentSession.updatedAt !== DEFAULT_SIP_SESSION.updatedAt));
 
-    // 1. Blinden Reset auf DEFAULT_SIP_SESSION unterbinden, sofern bereits eine Sitzung aktiv ist
     if (!hasActiveSession) {
       this.currentSession = DEFAULT_SIP_SESSION;
     }
 
     if (!this.isInitialized) {
       this.isInitialized = true;
-
-      // 2. Verbinde mit Supabase Realtime
       this.setupSupabase(settings);
-
-      // 3. Sofortiger Abruf aus Supabase (forceOverwrite = false)
       this.fetchFromSupabase(settings, false).catch(() => {});
-
-      // 4. Schneller Sync-Takt alle 2 Sekunden zur garantierten Ausfallsicherheit (forceOverwrite = false)
+      
       if (!this.syncInterval) {
         this.syncInterval = setInterval(() => {
           this.fetchFromSupabase(this.cachedSettings || settings, false).catch(() => {});
@@ -362,40 +351,35 @@ class SipRealtimeService {
     }
   }
 
-  public setupSupabase(settings: AppSettings) {
-    const client = getSupabaseClient(settings);
-    if (!client) return;
-
-    if (this.supabaseChannel) {
-      client.removeChannel(this.supabaseChannel);
+  public async setupPocketBase(_settings?: AppSettings) {
+    if (this.isPocketBaseSubscribed) {
+      try {
+        await pb.collection(SIP_DATABASE_TABLE).unsubscribe('*');
+      } catch (unsubErr) {
+        console.warn('PocketBase unsubscribe error:', unsubErr);
+      }
+      this.isPocketBaseSubscribed = false;
     }
 
     try {
-      this.supabaseChannel = client
-        .channel('sip-live-updates')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'sip_state' },
-          (payload) => {
-            const newRow = payload.new as any;
-            if (newRow && (!newRow.id || newRow.id === 'current_session') && newRow.payload) {
-              this.setAppState(newRow.payload, false);
-            }
-          }
-        )
-        .on('broadcast', { event: 'sip_event' }, (payload) => {
-          if (payload && payload.payload) {
-            this.handleIncomingMessage(payload.payload as SipRealtimeMessage);
-          }
-        })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('[SiP Realtime] Connected to live channel on table: sip_state');
-          }
-        });
+      const handleRealtimeRecord = (e: any) => {
+        if (!e || e.action === 'delete') return;
+        const record = e.record;
+        if (record && (!record.id || record.id === SIP_DB_ROW_ID) && record.payload) {
+          this.setAppState(record.payload, false);
+        }
+      };
+
+      await pb.collection(SIP_DATABASE_TABLE).subscribe('*', handleRealtimeRecord);
+      this.isPocketBaseSubscribed = true;
+      console.log(`[SiP Realtime] Connected to PocketBase collection: ${SIP_DATABASE_TABLE}`);
     } catch (err) {
-      console.warn('Supabase Realtime setup error:', err);
+      console.warn('PocketBase Realtime setup error:', err);
     }
+  }
+
+  public setupSupabase(settings: AppSettings) {
+    return this.setupPocketBase(settings);
   }
 
   public getSession(): SipSession {
@@ -421,7 +405,10 @@ class SipRealtimeService {
   private saveToStorage() {
     try {
       localStorage.setItem(SIP_STORAGE_KEY, JSON.stringify(this.currentSession));
-    } catch {}
+    } catch (err: any) {
+      const errorMsg = err.message || 'Unknown error';
+      void errorMsg;
+    }
   }
 
   private notify() {
@@ -440,7 +427,6 @@ class SipRealtimeService {
     const now = Date.now();
     const lastTriggered = this.recentNotificationSignatures.get(sig);
     if (lastTriggered && now - lastTriggered < 8000) {
-      // Duplikat innerhalb von 8 Sekunden ignorieren
       return;
     }
     this.recentNotificationSignatures.set(sig, now);
@@ -471,30 +457,13 @@ class SipRealtimeService {
   }
 
   private broadcastMessage(msg: SipRealtimeMessage, _settings?: AppSettings) {
-    // 1. Lokaler Broadcast
     if (this.localChannel) {
       try {
         this.localChannel.postMessage(msg);
-      } catch {}
-    }
-
-    // 2. Supabase Realtime Broadcast (mit kompaktem Payload falls STATE_SYNC um 64KB Limit einzuhalten)
-    // KEIN un-awaiteter syncSessionToSupabase-Aufruf hier drin!
-    if (this.supabaseChannel) {
-      try {
-        let payloadToSend = msg;
-        if (msg.type === 'STATE_SYNC' && msg.session) {
-          payloadToSend = {
-            type: 'STATE_SYNC',
-            session: this.toCompactSession(msg.session),
-          };
-        }
-        this.supabaseChannel.send({
-          type: 'broadcast',
-          event: 'sip_event',
-          payload: payloadToSend,
-        });
-      } catch {}
+      } catch (err: any) {
+        const errorMsg = err.message || 'Unknown error';
+        void errorMsg;
+      }
     }
   }
 
@@ -530,14 +499,15 @@ class SipRealtimeService {
         };
         this.notify();
         this.triggerBlurPopup(targetAntrag);
-        this.triggerNotification({
+        const activeNotif: SipNotification = {
           id: `notif_${Date.now()}`,
           title: '🚨 Neuer Antrag aufgerufen!',
           message: `${targetAntrag.title} wird jetzt im Parlament verhandelt.`,
           type: 'motion',
           timestamp: new Date().toISOString(),
           antragId: msg.antragId,
-        });
+        };
+        this.triggerNotification(activeNotif);
         break;
       }
 
@@ -548,13 +518,14 @@ class SipRealtimeService {
           updatedAt: this.nextTimestamp(),
         };
         this.notify();
-        this.triggerNotification({
+        const voteNotif: SipNotification = {
           id: `notif_${Date.now()}`,
           title: `🗳️ Abstimmungsempfehlung: ${msg.recommendation.type}`,
           message: msg.recommendation.note || 'Die Strategieführung hat die Empfehlung aktualisiert.',
           type: 'vote',
           timestamp: new Date().toISOString(),
-        });
+        };
+        this.triggerNotification(voteNotif);
         break;
       }
 
@@ -569,14 +540,15 @@ class SipRealtimeService {
           updatedAt: this.nextTimestamp(),
         };
         this.notify();
-        this.triggerNotification({
+        const claimNotif: SipNotification = {
           id: `notif_${Date.now()}`,
           title: '📢 Antrag geclaimed!',
           message: `${msg.claimedBy} hat "${msg.antragTitle}" geclaimed.`,
           type: 'claim',
           timestamp: new Date().toISOString(),
           antragId: msg.antragId,
-        });
+        };
+        this.triggerNotification(claimNotif);
         break;
       }
 
@@ -601,13 +573,14 @@ class SipRealtimeService {
             updatedAt: this.nextTimestamp(),
           };
           this.notify();
-          this.triggerNotification({
+          const submitNotif: SipNotification = {
             id: `notif_${Date.now()}`,
             title: '📝 Neuer Antrag eingereicht',
             message: `${msg.antrag.author} hat einen neuen Antrag eingereicht.`,
             type: 'motion',
             timestamp: new Date().toISOString(),
-          });
+          };
+          this.triggerNotification(submitNotif);
         }
         break;
       }
@@ -656,8 +629,6 @@ class SipRealtimeService {
     }
   }
 
-  // --- ACTIONS & AUDIT LOGGING ---
-
   public logActivity(entry: Omit<SipActivityLogEntry, 'id' | 'timestamp'>) {
     const fullEntry: SipActivityLogEntry = {
       ...entry,
@@ -671,9 +642,6 @@ class SipRealtimeService {
     };
   }
 
-  /**
-   * Strategieführung ruft einen neuen Antrag auf (ploppt auf allen Geräten auf!)
-   */
   public async activateAntrag(antragId: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     const antrag = this.currentSession.antraege.find((a) => a.id === antragId);
@@ -727,9 +695,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Strategieführung beendet den aktuellen Aufruf (Pause / Zwischenabstimmung)
-   */
   public async clearActiveAntrag(settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     this.logActivity({
@@ -766,9 +731,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Antrag als ANGENOMMEN oder ABGELEHNT kennzeichnen
-   */
   public async decideAntrag(
     antragId: string,
     decision: 'ANGENOMMEN' | 'ABGELEHNT',
@@ -818,9 +780,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Abstimmungsempfehlung zentral pushen
-   */
   public async setVoteRecommendation(
     rec: Omit<VoteRecommendation, 'updatedAt'>,
     settings?: AppSettings
@@ -865,9 +824,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Ein Mitglied oder die Strategieführung claimt einen Antrag
-   */
   public async claimAntrag(antragId: string, memberName: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
@@ -892,7 +848,6 @@ class SipRealtimeService {
     this.saveToStorage();
     this.notify();
 
-    // Lokaler Toast sofort für den Nutzer
     this.triggerNotification({
       id: `notif_${Date.now()}`,
       title: '📢 Antrag geclaimed!',
@@ -912,9 +867,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Claim zurückziehen
-   */
   public async unclaimAntrag(antragId: string, memberName: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
@@ -948,9 +900,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Neues Mitglied reicht eigenen Antrag ein (wartet auf Strategieführung)
-   */
   public submitCustomAntrag(
     antragData: Omit<SipAntrag, 'id' | 'isPreFab' | 'status' | 'createdAt'>,
     settings?: AppSettings
@@ -963,7 +912,7 @@ class SipRealtimeService {
       isPreFab: false,
       status: 'pending_approval',
       createdAt: ts,
-      claimedBy: antragData.author, // automatisch geclaimed vom Verfasser
+      claimedBy: antragData.author,
       claimedAt: ts,
     };
 
@@ -993,9 +942,6 @@ class SipRealtimeService {
     return newAntrag;
   }
 
-  /**
-   * Strategieführung genehmigt oder überarbeitet einen Antrag
-   */
   public async updateOrApproveAntrag(
     antragId: string,
     updates: Partial<SipAntrag>,
@@ -1042,9 +988,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Löscht einen Antrag
-   */
   public async deleteAntrag(antragId: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     const target = this.currentSession.antraege.find((a) => a.id === antragId);
@@ -1078,9 +1021,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Archiviert die aktuelle Sitzung und leert alle Kategorien (Anträge, Notizen, Memes, Drive)
-   */
   public async archiveAndClearCurrentSession(settings?: AppSettings): Promise<void> {
     this.lastLocalMutationAt = Date.now();
     const oldSession = { ...this.currentSession };
@@ -1116,15 +1056,14 @@ class SipRealtimeService {
     this.saveToStorage();
     this.notify();
 
-    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+    const stateSyncMsg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(stateSyncMsg, settings);
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Startet ein neues SiP mit gewähltem Namen und Google Drive Ordner.
-   * Archiviert das vorherige SiP automatisch, falls es noch nicht archiviert wurde.
-   * Unterstützt die direkte Übernahme automatisch importierter Haupt- und Nebenanträge.
-   */
   public async startNewSession(
     options: {
       title: string;
@@ -1138,7 +1077,6 @@ class SipRealtimeService {
     this.lastLocalMutationAt = Date.now();
     const oldSession = { ...this.currentSession };
 
-    // Wenn das vorherige SiP noch nicht archiviert wurde und Inhalte hatte: Jetzt archivieren
     if (!options.skipArchive && (oldSession.antraege.length > 0 || (oldSession.activityLog || []).length > 1)) {
       await archiveCurrentSession(oldSession, 'Strategieführung', settings || this.cachedSettings || undefined);
     }
@@ -1184,13 +1122,14 @@ class SipRealtimeService {
     this.saveToStorage();
     this.notify();
 
-    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+    const stateSyncMsg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(stateSyncMsg, settings);
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Importiert automatisch kombinierte Anträge und Strategie in die bestehende Sitzung
-   */
   public async importCombinedAntraegeAndStrategy(
     antraege: SipAntrag[],
     strategyNotes?: string,
@@ -1203,7 +1142,6 @@ class SipRealtimeService {
     const hauptCount = hauptantraege.length;
     const subCount = nebenantraege.length;
 
-    // Wenn ein kompletter Satz (mit Hauptanträgen) importiert wird, ersetze vorherige PreFab-Anträge sauber durch finalMotions
     const finalMotions =
       hauptCount > 0
         ? [...hauptantraege, ...nebenantraege]
@@ -1224,7 +1162,7 @@ class SipRealtimeService {
     this.currentSession = {
       ...this.currentSession,
       id:
-        this.currentSession.id === 'sip_current_session'
+        this.currentSession.id === 'currentsession0'
           ? `session_${Date.now()}`
           : this.currentSession.id,
       antraege: finalMotions,
@@ -1248,13 +1186,14 @@ class SipRealtimeService {
     this.saveToStorage();
     this.notify();
 
-    this.broadcastMessage({ type: 'STATE_SYNC', session: this.currentSession }, settings);
+    const stateSyncMsg: SipRealtimeMessage = {
+      type: 'STATE_SYNC',
+      session: this.currentSession,
+    };
+    this.broadcastMessage(stateSyncMsg, settings);
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Löscht ein Meme aus dem Meme-Feed (durch Strategieführung)
-   */
   public async deleteMeme(memeId: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     this.currentSession = {
@@ -1273,9 +1212,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Batch-Import von vorgefertigten Anträgen aus Dokument
-   */
   public async importAntraege(newAntraege: SipAntrag[], settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     const normalizedInput = newAntraege.map((a) => ({ ...a, isPreFab: false }));
@@ -1301,7 +1237,7 @@ class SipRealtimeService {
     this.currentSession = {
       ...this.currentSession,
       id:
-        this.currentSession.id === 'sip_current_session'
+        this.currentSession.id === 'currentsession0'
           ? `session_${Date.now()}`
           : this.currentSession.id,
       antraege: finalMotions,
@@ -1318,9 +1254,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Aktualisiert Strategie-Notizen
-   */
   public async updateStrategyNotes(notes: string, settings?: AppSettings) {
     this.lastLocalMutationAt = Date.now();
     this.currentSession = {
@@ -1334,9 +1267,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Aktualisiert Google Drive Ordner Link oder SiP Titel
-   */
   public async updateSessionMetadata(
     metadata: { title?: string; driveFolderUrl?: string },
     settings?: AppSettings
@@ -1358,9 +1288,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Fügt ein Meme hinzu
-   */
   public async addMeme(
     memeData: { author: string; imageUrl: string; caption: string },
     settings?: AppSettings
@@ -1392,9 +1319,6 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  /**
-   * Reagiert auf ein Meme mit einem Emoji
-   */
   public async toggleMemeReaction(
     memeId: string,
     emoji: string,
@@ -1435,47 +1359,118 @@ class SipRealtimeService {
     await this.syncSessionToSupabase(settings || this.cachedSettings || undefined, this.currentSession);
   }
 
-  // --- SUPABASE PERSISTENCE ---
-
-  public async fetchFromSupabase(settings?: AppSettings, forceOverwrite = false): Promise<SipSession | null> {
-    // Guard: Wenn aktuell ein Sync läuft oder vor weniger als 2 Sekunden eine lokale Aktion durchgeführt wurde,
-    // überspringe den Polling-Fetch
+  public async fetchFromPocketBase(_settings?: AppSettings, forceOverwrite = false): Promise<SipSession | null> {
     if (this.isSyncingToSupabase || (!forceOverwrite && Date.now() - this.lastLocalMutationAt < 2000)) {
       return null;
     }
 
-    const client = getSupabaseClient(settings || this.cachedSettings || undefined);
-    if (!client) return null;
+    const rowId = SIP_DB_ROW_ID;
+    let rawRecord: any = null;
+    let readError: any = null;
 
     try {
-      // Direkter SELECT auf die Tabelle sip_state: supabase.from('sip_state').select('payload').eq('id', 'current_session').single()
-      const { data, error } = await client
-        .from('sip_state')
-        .select('payload')
-        .eq('id', 'current_session')
-        .single();
+      rawRecord = await pb.collection(SIP_DATABASE_TABLE).getOne(rowId);
+    } catch (err: any) {
+      readError = err;
+    }
 
-      if (!error && data && data.payload) {
-        this.setAppState(data.payload, false);
-        return data.payload as SipSession;
+    if (!readError && rawRecord) {
+      const record = rawRecord as unknown as SipStateRecord;
+      if (record && record.payload) {
+        const sessionData = record.payload as unknown as SipSession;
+        this.setAppState(sessionData, false);
+        return sessionData;
       }
-    } catch (err) {
-      console.warn('Could not fetch SiP session from Supabase:', err);
+      return null;
+    }
+
+    const status = readError ? readError.status : 0;
+    if (status === 404) {
+      const createObj = {
+        id: rowId,
+        payload: DEFAULT_SIP_SESSION,
+      };
+
+      let createdRaw: any = null;
+      let createError: any = null;
+
+      try {
+        createdRaw = await pb.collection(SIP_DATABASE_TABLE).create(createObj);
+      } catch (err: any) {
+        createError = err;
+      }
+
+      if (!createError && createdRaw) {
+        const createdRecord = createdRaw as unknown as SipStateRecord;
+        if (createdRecord && createdRecord.payload) {
+          const sessionData = createdRecord.payload as unknown as SipSession;
+          this.setAppState(sessionData, false);
+          return sessionData;
+        }
+      } else if (createError) {
+        console.warn('Could not auto-create initial SiP session in PocketBase:', createError);
+      }
+      return null;
+    }
+
+    if (readError) {
+      console.warn('Could not fetch SiP session from PocketBase:', readError);
     }
     return null;
   }
 
-  /**
-   * Zentraler, koordinierter Supabase-Upsert:
-   * Verhindert parallele Out-of-Order-Requests durch eine Single-Flight-Queue.
-   */
-  public async syncSessionToSupabase(settings?: AppSettings, session?: SipSession): Promise<void> {
+  public async fetchFromSupabase(settings?: AppSettings, forceOverwrite = false): Promise<SipSession | null> {
+    return this.fetchFromPocketBase(settings, forceOverwrite);
+  }
+
+  private async persistSingleSessionToPocketBase(sessionToSave: SipSession): Promise<void> {
+    const rowId = SIP_DB_ROW_ID;
+    const recordData = {
+      id: rowId,
+      payload: sessionToSave,
+    };
+
+    let updateError: any = null;
+
+    try {
+      await pb.collection(SIP_DATABASE_TABLE).update(rowId, recordData);
+    } catch (err: any) {
+      updateError = err;
+    }
+
+    if (!updateError) {
+      return;
+    }
+
+    const status = updateError ? updateError.status : 0;
+    if (status === 404) {
+      const createObj = {
+        id: rowId,
+        payload: sessionToSave,
+      };
+
+      try {
+        await pb.collection(SIP_DATABASE_TABLE).create(createObj);
+      } catch (createErr: any) {
+        console.warn('Could not create SiP session in PocketBase:', createErr);
+      }
+      return;
+    }
+
+    console.warn('Could not update SiP session in PocketBase:', updateError);
+  }
+
+  public async syncSessionToPocketBase(settings?: AppSettings, session?: SipSession): Promise<void> {
     const targetSession = session || this.currentSession;
     const targetSettings = settings || this.cachedSettings || undefined;
     this.lastLocalMutationAt = Date.now();
 
     if (this.isSyncingToSupabase) {
-      this.pendingSyncSession = { settings: targetSettings, session: targetSession };
+      const pendingItem = {
+        settings: targetSettings,
+        session: targetSession,
+      };
+      this.pendingSyncSession = pendingItem;
       return;
     }
 
@@ -1485,34 +1480,22 @@ class SipRealtimeService {
       session: targetSession,
     };
 
-    try {
-      while (currentToSync) {
-        const { settings: s, session: newState } = currentToSync;
-        this.pendingSyncSession = null;
-        this.lastLocalMutationAt = Date.now();
+    while (currentToSync) {
+      const itemToSync = currentToSync;
+      const newState = itemToSync.session;
+      this.pendingSyncSession = null;
+      this.lastLocalMutationAt = Date.now();
 
-        const client = getSupabaseClient(s || this.cachedSettings || undefined);
-        if (client) {
-          try {
-            const { error } = await client.from('sip_state').upsert({
-              id: 'current_session',
-              payload: newState,
-              updated_at: newState.updatedAt || new Date().toISOString(),
-            });
+      await this.persistSingleSessionToPocketBase(newState);
 
-            if (error) {
-              console.error('[SiP Realtime] Error persisting session to Supabase:', error);
-            }
-          } catch (err) {
-            console.warn('Could not persist SiP session to Supabase:', err);
-          }
-        }
-
-        currentToSync = this.pendingSyncSession;
-      }
-    } finally {
-      this.isSyncingToSupabase = false;
+      currentToSync = this.pendingSyncSession;
     }
+
+    this.isSyncingToSupabase = false;
+  }
+
+  public async syncSessionToSupabase(settings?: AppSettings, session?: SipSession): Promise<void> {
+    return this.syncSessionToPocketBase(settings, session);
   }
 }
 

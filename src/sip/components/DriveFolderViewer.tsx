@@ -45,7 +45,7 @@ export const DriveFolderViewer: React.FC<DriveFolderViewerProps> = ({
         }
       }
       return raw;
-    } catch {
+    } catch (_err) {
       return raw;
     }
   };

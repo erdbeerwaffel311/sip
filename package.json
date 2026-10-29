@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.13.0",
     "pdfjs-dist": "^6.4.299",
+    "pocketbase": "^0.28.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

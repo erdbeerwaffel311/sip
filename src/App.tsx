@@ -11,7 +11,7 @@ import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
 import { sipRealtime } from './sip/sipRealtime';
-import { getSupabaseClient, verifyAdmin2FACode, querySipRow, upsertSipRow } from './utils/supabaseSync';
+import { verifyAdmin2FACode, querySipRow, upsertSipRow, SIP_CONFIG_ROW_ID } from './utils/supabaseSync';
 import { verifyTotpCode } from './utils/totp';
 
 const STORAGE_KEYS = {
@@ -32,15 +32,13 @@ export const App: React.FC = () => {
         return {
           ...DEFAULT_SIP_SETTINGS,
           ...parsed,
-          supabaseUrl: parsed.supabaseUrl?.trim() || DEFAULT_SIP_SETTINGS.supabaseUrl,
-          supabaseAnonKey: parsed.supabaseAnonKey?.trim() || DEFAULT_SIP_SETTINGS.supabaseAnonKey,
           adminPassword: parsed.adminPassword || 'admin2026!',
           strategiePassword: parsed.strategiePassword || 'strategie2026',
           totpSecret: parsed.totpSecret || '',
           totpEnabled: parsed.totpEnabled ?? false,
         };
       }
-    } catch {}
+    } catch (loadSettingsErr) {}
     return DEFAULT_SIP_SETTINGS;
   });
 
@@ -51,7 +49,7 @@ export const App: React.FC = () => {
         const acc = JSON.parse(saved) as MemberAccount;
         if (!isAccountExpired(acc)) return acc;
       }
-    } catch {}
+    } catch (loadUserErr) {}
     return null;
   });
 
@@ -69,8 +67,6 @@ export const App: React.FC = () => {
       url.searchParams.get('2fa') === 'verify' ||
       url.hash.includes('access_token') ||
       Boolean(url.searchParams.get('2fa_code'));
-
-    const client = getSupabaseClient(settings);
 
     function grantAdminSession() {
       setInitial2FAVerified(true);
@@ -104,82 +100,61 @@ export const App: React.FC = () => {
         }
       });
     }
-
-    if (client) {
-      const { data: sub } = client.auth.onAuthStateChange((event, session) => {
-        if (
-          (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') &&
-          session?.user?.email &&
-          (!settings.adminEmail ||
-            session.user.email.toLowerCase() === settings.adminEmail.trim().toLowerCase())
-        ) {
-          if (has2FAParam) {
-            grantAdminSession();
-          }
-        }
-      });
-
-      return () => {
-        sub.subscription.unsubscribe();
-      };
-    }
   }, [settings.adminEmail, settings.memberAccounts, settings.adminPassword]);
 
   // Cloud Sync für Einstellungen & Accounts
   useEffect(() => {
-    const client = getSupabaseClient(settings);
-    if (!client) return;
-
     async function fetchUsers() {
-      try {
-        const { data, error } = await querySipRow(client!, '__sip_users_config__');
+      const res = await querySipRow(SIP_CONFIG_ROW_ID);
+      const data = res ? res.data : null;
+      const error = res ? res.error : null;
 
-        if (!error && data?.payload) {
-          setSettings((prev) => ({
-            ...prev,
-            memberAccounts: data.payload.memberAccounts || prev.memberAccounts,
-            adminPassword: data.payload.adminPassword || prev.adminPassword,
-            strategiePassword: data.payload.strategiePassword || prev.strategiePassword,
-            adminEmail: data.payload.adminEmail ?? prev.adminEmail,
-            totpSecret: data.payload.totpSecret ?? prev.totpSecret,
-            totpEnabled: data.payload.totpEnabled ?? prev.totpEnabled,
-          }));
-        }
-      } catch {}
+      if (!error && data && data.payload) {
+        const payload = data.payload;
+        setSettings((prev) => ({
+          ...prev,
+          memberAccounts: payload.memberAccounts || prev.memberAccounts,
+          adminPassword: payload.adminPassword || prev.adminPassword,
+          strategiePassword: payload.strategiePassword || prev.strategiePassword,
+          adminEmail: payload.adminEmail !== undefined ? payload.adminEmail : prev.adminEmail,
+          totpSecret: payload.totpSecret !== undefined ? payload.totpSecret : prev.totpSecret,
+          totpEnabled: payload.totpEnabled !== undefined ? payload.totpEnabled : prev.totpEnabled,
+        }));
+      }
     }
     fetchUsers();
-  }, [settings.supabaseUrl, settings.supabaseAnonKey]);
+  }, []);
 
-  // Initialisiere SiP-Realtime sofort beim Start der App (lädt __sip_session_current__ sofort aus Supabase)
+  // Initialisiere SiP-Realtime sofort beim Start der App (lädt currentsession0 sofort aus PocketBase)
   useEffect(() => {
     sipRealtime.init(settings);
-  }, [settings.supabaseUrl, settings.supabaseAnonKey]);
+  }, []);
 
   async function handleSaveSettings(newSettings: AppSettings) {
     setSettings(newSettings);
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
 
-    // Persistiere in Supabase (sip_state)
-    const client = getSupabaseClient(newSettings);
-    if (client) {
-      try {
-        const { data } = await querySipRow(client, '__sip_users_config__');
-        const oldPayload = data?.payload || {};
+    // Persistiere in PocketBase (sip_state)
+    const res = await querySipRow(SIP_CONFIG_ROW_ID);
+    const data = res ? res.data : null;
+    const oldPayload = data && data.payload ? data.payload : {};
 
-        await upsertSipRow(client, {
-          id: '__sip_users_config__',
-          payload: {
-            ...oldPayload,
-            memberAccounts: newSettings.memberAccounts,
-            adminPassword: newSettings.adminPassword,
-            strategiePassword: newSettings.strategiePassword,
-            adminEmail: newSettings.adminEmail,
-            totpSecret: newSettings.totpSecret,
-            totpEnabled: newSettings.totpEnabled,
-          },
-        });
-      } catch {}
-    }
+    const newPayload = {
+      ...oldPayload,
+      memberAccounts: newSettings.memberAccounts,
+      adminPassword: newSettings.adminPassword,
+      strategiePassword: newSettings.strategiePassword,
+      adminEmail: newSettings.adminEmail,
+      totpSecret: newSettings.totpSecret,
+      totpEnabled: newSettings.totpEnabled,
+    };
+
+    const recordData = {
+      id: SIP_CONFIG_ROW_ID,
+      payload: newPayload,
+    };
+
+    await upsertSipRow(recordData);
   }
 
   function handleLoginSuccess(account: MemberAccount) {

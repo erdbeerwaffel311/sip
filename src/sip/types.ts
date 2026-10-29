@@ -173,7 +173,7 @@ export const ANTRAG_TYPE_CONFIG: Record<
 };
 
 export const DEFAULT_SIP_SESSION: SipSession = {
-  id: 'sip_current_session',
+  id: 'currentsession0',
   title: '2. Schüler:innenparlament (SiP) 2024/25',
   driveFolderUrl: 'https://drive.google.com/drive/folders/1srawS_1c9GZCqDCDuUUPhU_02FPttxi-?usp=share_link',
   strategyNotes: REAL_SIP_STRATEGY_NOTES,

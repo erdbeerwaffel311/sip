@@ -164,7 +164,7 @@ export async function fetchDriveFolderEntriesLive(folderId: string): Promise<Par
       if (parsed.length > 0) {
         return parsed;
       }
-    } catch {
+    } catch (_err) {
       // Nächsten Endpunkt probieren
     }
   }
@@ -369,7 +369,7 @@ export async function resolveDriveFolderManifest(
         return data as GoogleDriveFolderManifest;
       }
     }
-  } catch {
+  } catch (_err) {
     // Vite Endpoint nicht erreichbar (z.B. auf GitHub Pages) -> weiter mit Live-Browser-Crawler
   }
 
@@ -484,7 +484,7 @@ export async function downloadDriveFileAsArrayBuffer(
         }
       }
       console.warn('Proxy fehlgeschlagen, probiere nächsten...', proxyUrl);
-    } catch {
+    } catch (_err) {
       console.warn('Proxy fehlgeschlagen, probiere nächsten...', proxyUrl);
     }
   }

@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
       'pdfjs-dist/legacy/build/pdf.worker.mjs',
       import.meta.url
     ).toString();
-  } catch {
+  } catch (_err) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '6.4.299'}/legacy/build/pdf.worker.min.mjs`;
   }
 }

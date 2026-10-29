@@ -99,7 +99,7 @@ export async function verifyTotpCode(
       if (expectedCode === cleanCandidate) {
         return true;
       }
-    } catch {
+    } catch (_err) {
       // Weiter
     }
   }

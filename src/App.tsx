@@ -11,7 +11,7 @@ import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
 import { SipMainView } from './sip/components/SipMainView';
 import { sipRealtime } from './sip/sipRealtime';
-import { verifyAdmin2FACode, querySipRow, upsertSipRow, SIP_CONFIG_ROW_ID } from './utils/supabaseSync';
+import { verifyAdmin2FACode, querySipRow, upsertSipRow, SIP_CONFIG_ROW_ID } from './utils/pocketbaseSync';
 import { verifyTotpCode } from './utils/totp';
 
 const STORAGE_KEYS = {

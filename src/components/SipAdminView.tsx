@@ -32,7 +32,7 @@ import {
   isAccountExpired,
   MemberAccount,
 } from '../types';
-import { sendAdmin2FAEmail, verifyAdmin2FACode } from '../utils/supabaseSync';
+import { sendAdmin2FAEmail, verifyAdmin2FACode } from '../utils/pocketbaseSync';
 import {
   generateTotpSecret,
   getTotpUri,
@@ -338,7 +338,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
       setTwoFactorNewAdminPassword('');
       setTwoFactorNewStrategiePassword('');
       if (res.rateLimited) {
-        showBanner('Eingabefeld geöffnet! (Supabase E-Mail-Limit erreicht - verwende den empfangenen Link oder Backup-Code).');
+        showBanner('Eingabefeld geöffnet! (Pocketbase E-Mail-Limit erreicht - verwende den empfangenen Link oder Backup-Code).');
       } else {
         showBanner(`2FA-Bestätigungs-E-Mail wurde an ${settings.adminEmail} gesendet!`);
       }

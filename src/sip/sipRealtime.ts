@@ -8,7 +8,7 @@ import {
   SipActivityLogEntry,
 } from './types';
 import { AppSettings, SipStateRecord } from '../types';
-import { pb, SIP_DATABASE_TABLE } from '../utils/supabaseSync';
+import { pb, SIP_DATABASE_TABLE } from '../utils/pocketbaseSync';
 import { archiveCurrentSession } from './utils/archiveService';
 
 export const SIP_STORAGE_KEY = 'sip_session_state_v1';

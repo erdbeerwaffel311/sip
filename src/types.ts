@@ -28,8 +28,6 @@ export interface AppSettings {
   totpEnabled?: boolean;
   allowedMembers: string[];
   memberAccounts: MemberAccount[];
-  supabaseUrl?: string;
-  supabaseAnonKey?: string;
   pocketbaseUrl?: string;
 }
 

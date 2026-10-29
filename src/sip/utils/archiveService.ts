@@ -1,6 +1,6 @@
 import { SipArchivedSession, SipSession } from '../types';
 import { AppSettings } from '../../types';
-import { querySipRow, upsertSipRow, SIP_ARCHIVE_ROW_ID } from '../../utils/supabaseSync';
+import { querySipRow, upsertSipRow, SIP_ARCHIVE_ROW_ID } from '../../utils/pocketbaseSync';
 
 export { SIP_ARCHIVE_ROW_ID };
 export const SIP_ARCHIVE_STORAGE_KEY = 'sip_archived_sessions_v1';

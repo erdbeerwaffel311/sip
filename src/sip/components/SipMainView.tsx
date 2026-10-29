@@ -334,7 +334,7 @@ export const SipMainView: React.FC<SipMainViewProps> = ({
 
   const currentUserName = currentMember?.name || (isAdminUnlocked ? 'Strategieführung' : 'Gast-Mitglied');
 
-  // Initialize Realtime & Supabase
+  // Initialize Realtime & Pocketbase
   useEffect(() => {
     sipRealtime.init(settings);
 

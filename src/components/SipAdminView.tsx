@@ -25,6 +25,8 @@ import {
   Smartphone,
   KeyRound,
   Database,
+  Download,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   AppSettings,
@@ -38,6 +40,9 @@ import {
   getTotpUri,
   verifyTotpCode,
   formatSecretForDisplay,
+  generateBackupCodes,
+  verifyAndConsumeBackupCode,
+  downloadBackupCodesTxt,
 } from '../utils/totp';
 
 
@@ -75,6 +80,10 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
 
   // TOTP Authenticator-App State
   const [showTotpSetupModal, setShowTotpSetupModal] = useState(false);
+  const [totpSetupStep, setTotpSetupStep] = useState<'qr' | 'backup_codes'>('qr');
+  const [generatedBackupCodes, setGeneratedBackupCodes] = useState<string[]>([]);
+  const [showManageBackupCodesModal, setShowManageBackupCodesModal] = useState(false);
+  const [copiedBackupCodesNotice, setCopiedBackupCodesNotice] = useState(false);
   const [totpDraftSecret, setTotpDraftSecret] = useState(settings.totpSecret || '');
   const [totpQrDataUrl, setTotpQrDataUrl] = useState<string | null>(null);
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
@@ -116,6 +125,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
     setTotpDraftSecret(sec);
     setTotpError(null);
     setTotpVerifyCode('');
+    setTotpSetupStep('qr');
     try {
       const uri = getTotpUri(sec, 'Admin', 'SiP-Parlament');
       const url = await QRCode.toDataURL(uri, {
@@ -136,29 +146,70 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
     const clean = totpVerifyCode.trim();
     const valid = await verifyTotpCode(totpDraftSecret, clean);
     if (!valid) {
-      setTotpError('ungültiges Passwort, bitte versuche es erneut!');
+      setTotpError('Ungültiger 6-stelliger Code. Bitte überprüfe deine Authenticator-App!');
       return;
     }
 
+    // 2FA-Code war korrekt -> Generiere sofort die 10 Notfallcodes (Ersatzcodes)
+    const freshBackupCodes = generateBackupCodes(10);
+    setGeneratedBackupCodes(freshBackupCodes);
+    setTotpSetupStep('backup_codes');
+  }
+
+  function handleFinishTotpActivationWithBackupCodes() {
     onUpdateSettings({
       ...settings,
       totpSecret: totpDraftSecret,
       totpEnabled: true,
+      totpBackupCodes: generatedBackupCodes,
     });
     setShowTotpSetupModal(false);
+    setTotpSetupStep('qr');
     setTotpVerifyCode('');
-    showBanner('Authenticator-App 2FA erfolgreich aktiviert! Alle registrierten Handys sind jetzt gültig.');
+    showBanner('2FA und 10 Notfallcodes erfolgreich aktiviert!');
+  }
+
+  function handleGenerateNewBackupCodes() {
+    if (!confirm('Möchtest du 10 neue Notfallcodes generieren? Alle bisherigen Notfallcodes werden damit sofort ungültig.')) return;
+    const fresh = generateBackupCodes(10);
+    onUpdateSettings({
+      ...settings,
+      totpBackupCodes: fresh,
+    });
+    setGeneratedBackupCodes(fresh);
+    setShowManageBackupCodesModal(true);
+    showBanner('10 neue Notfallcodes wurden erfolgreich generiert!');
   }
 
   async function handleVerifyTotpForPasswordChange(e: React.FormEvent) {
     e.preventDefault();
-    if (!settings.totpSecret) return;
     const clean = totpVerifyCode.trim();
-    const valid = await verifyTotpCode(settings.totpSecret, clean);
+    if (!clean) return;
+
+    let valid = false;
+
+    // 1. Zuerst 6-stelligen TOTP-Code prüfen (falls Secret vorhanden)
+    if (settings.totpSecret && clean.length === 6) {
+      valid = await verifyTotpCode(settings.totpSecret, clean);
+    }
+
+    // 2. Falls ungültig, prüfen ob es sich um einen Notfallcode handelt
+    if (!valid && settings.totpBackupCodes && settings.totpBackupCodes.length > 0) {
+      const backupCheck = verifyAndConsumeBackupCode(clean, settings.totpBackupCodes);
+      if (backupCheck.valid) {
+        valid = true;
+        onUpdateSettings({
+          ...settings,
+          totpBackupCodes: backupCheck.remainingCodes,
+        });
+      }
+    }
+
     if (!valid) {
-      setTwoFactorError('ungültiges Passwort, bitte versuche es erneut!');
+      setTwoFactorError('Ungültiger Bestätigungscode oder Notfallcode, bitte versuche es erneut!');
       return;
     }
+
     setTwoFactorStage('verified');
     setTotpVerifyCode('');
     setTwoFactorError(null);
@@ -879,73 +930,49 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
             </form>
           )}
 
-          {/* 2. ALTERNATIVE: E-Mail-2FA (Backup) */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-5 sm:p-6 text-white space-y-3">
-            <div className="flex items-center gap-2.5">
-              <Mail className="w-4 h-4 text-slate-400" />
-              <h4 className="text-sm font-bold text-slate-300">E-Mail 2FA (Alternatives Backup)</h4>
-            </div>
-
-            {settings.adminEmail ? (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[11px]">Hinterlegte Backup-E-Mail:</span>
-                  <span className="font-mono text-white font-bold">{settings.adminEmail}</span>
+          {/* 10 Notfallcodes (Ersatzcodes für 2FA) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 text-white space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                  <KeyRound className="w-5 h-5" />
                 </div>
-                {twoFactorStage === 'idle' && (
-                  <button
-                    type="button"
-                    onClick={handleRequest2FACode}
-                    disabled={twoFactorLoading}
-                    className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold cursor-pointer text-xs"
-                  >
-                    {twoFactorLoading ? 'Sende...' : 'Per E-Mail bestätigen'}
-                  </button>
-                )}
+                <div>
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <span>10 Notfallcodes (Ersatzcodes)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      {settings.totpBackupCodes?.length || 0} von 10 verfügbar
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Ermöglicht den Admin-Login, falls du keinen Zugriff auf deine Authenticator-App hast
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={initial2FAEmailInput}
-                  onChange={(e) => setInitial2FAEmailInput(e.target.value)}
-                  placeholder="admin@schuelerunion.at"
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                />
+
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleSaveInitial2FAEmail}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                  onClick={() => setShowManageBackupCodesModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  Speichern
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Codes anzeigen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateNewBackupCodes}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>10 neue Codes generieren</span>
                 </button>
               </div>
-            )}
+            </div>
 
-            {/* Code sent via Email */}
-            {twoFactorStage === 'code_sent' && (
-              <form onSubmit={handleVerify2FACode} className="space-y-2 pt-2 border-t border-slate-800">
-                <p className="text-xs text-slate-300">
-                  E-Mail gesendet! Füge den Link oder Code hier ein:
-                </p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={twoFactorCodeInput}
-                    onChange={(e) => setTwoFactorCodeInput(e.target.value)}
-                    placeholder="Link oder Code einfügen"
-                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white font-mono"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
-                  >
-                    Bestätigen
-                  </button>
-                </div>
-              </form>
-            )}
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+              Jeder Notfallcode ist ein 8-stelliger Sicherheitsschlüssel (Format: <strong className="font-mono text-amber-300">XXXX-XXXX</strong>), der genau <strong>einmalig</strong> für den Administrator-Login verwendet werden kann. Nach der Einlösung wird der Code automatisch entwertet.
+            </p>
           </div>
 
           {/* Cloud Database Sync Settings */}
@@ -988,7 +1015,7 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
         </div>
       )}
 
-      {/* Modal: TOTP QR-Code Setup / Anzeigen */}
+      {/* Modal: TOTP Authenticator-App einrichten (2-stufig: QR -> 10 Notfallcodes) */}
       {showTotpSetupModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl max-w-md w-full text-white space-y-4 animate-in fade-in zoom-in-95">
@@ -998,106 +1025,266 @@ export const SipAdminView: React.FC<SipAdminViewProps> = ({
                   <Smartphone className="w-4 h-4" />
                 </div>
                 <h2 className="text-base font-black">
-                  Authenticator-App einrichten
+                  {totpSetupStep === 'qr' ? 'Authenticator-App einrichten' : 'Deine 10 Notfallcodes sichern'}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTotpSetupModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="text-xs text-slate-300 space-y-2">
-              <p>
-                <strong>1. App öffnen:</strong> Öffne Google Authenticator, Apple Passwörter oder Microsoft Authenticator auf deinem Smartphone.
-              </p>
-              <p>
-                <strong>2. QR-Code scannen:</strong> Scanne diesen Code mit der App ab (kann von mehreren Personen / Handys abgescannt werden):
-              </p>
-            </div>
-
-            {/* QR-Code Bild */}
-            <div className="flex justify-center py-2">
-              {totpQrDataUrl ? (
-                <div className="p-3 bg-white rounded-2xl shadow-xl border border-slate-700">
-                  <img
-                    src={totpQrDataUrl}
-                    alt="2FA QR Code"
-                    className="w-48 h-48 block"
-                  />
+            {totpSetupStep === 'qr' ? (
+              <div className="space-y-4">
+                <div className="text-xs text-slate-300 space-y-2">
+                  <p>
+                    <strong>1. App öffnen:</strong> Öffne Google Authenticator, Apple Passwörter oder Microsoft Authenticator auf deinem Smartphone.
+                  </p>
+                  <p>
+                    <strong>2. QR-Code scannen:</strong> Scanne diesen Code mit der App ab (kann von mehreren Personen / Handys abgescannt werden):
+                  </p>
                 </div>
-              ) : (
-                <div className="w-48 h-48 flex items-center justify-center bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-500">
-                  Generiere QR-Code...
-                </div>
-              )}
-            </div>
 
-            {/* Manuelle Eingabe (Secret Key) */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-              <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span>Manueller Einrichtungsschlüssel (Secret):</span>
+                {/* QR-Code Bild */}
+                <div className="flex justify-center py-2">
+                  {totpQrDataUrl ? (
+                    <div className="p-3 bg-white rounded-2xl shadow-xl border border-slate-700">
+                      <img
+                        src={totpQrDataUrl}
+                        alt="2FA QR Code"
+                        className="w-48 h-48 block"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-48 h-48 flex items-center justify-center bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-500">
+                      Generiere QR-Code...
+                    </div>
+                  )}
+                </div>
+
+                {/* Manuelle Eingabe (Secret Key) */}
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span>Manueller Einrichtungsschlüssel (Secret):</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(totpDraftSecret);
+                        setCopiedTotpSecret(true);
+                        setTimeout(() => setCopiedTotpSecret(false), 2500);
+                      }}
+                      className="text-sky-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedTotpSecret ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Kopiert!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Kopieren</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="font-mono text-xs font-bold text-sky-300 tracking-wider break-all select-all">
+                    {formatSecretForDisplay(totpDraftSecret)}
+                  </p>
+                </div>
+
+                {/* Schritt 3: Aktivierungscode eingeben */}
+                <form onSubmit={handleConfirmTotpActivation} className="space-y-3 pt-2 border-t border-slate-800">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    3. Bestätigen: Gib den 6-stelligen Code aus deiner App ein
+                  </label>
+
+                  {totpError && (
+                    <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{totpError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      value={totpVerifyCode}
+                      onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-center tracking-widest text-lg font-bold focus:outline-none focus:border-sky-500"
+                    />
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs cursor-pointer transition shadow-md shrink-0"
+                    >
+                      Code prüfen
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              /* Schritt 4: 10 Notfallcodes anzeigen & sichern */
+              <div className="space-y-4 animate-in fade-in">
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 leading-relaxed space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <KeyRound className="w-4 h-4" />
+                    <span>2FA fast fertig: Bitte sichere deine 10 Notfallcodes!</span>
+                  </div>
+                  <p className="text-slate-300 text-[11px]">
+                    Solltest du jemals keinen Zugriff auf dein Handy oder die Authenticator-App haben, kannst du dich mit jedem dieser 10 Codes genau einmal als Administrator anmelden.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-950 rounded-2xl border border-slate-800 font-mono text-center text-xs font-bold text-amber-300">
+                  {generatedBackupCodes.map((code, idx) => (
+                    <div key={code} className="p-2 rounded-xl bg-slate-900 border border-slate-800 select-all">
+                      <span className="text-[10px] text-slate-500 mr-1.5">{idx + 1}.</span>
+                      <span>{code}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedBackupCodes.join('\n'));
+                      setCopiedBackupCodesNotice(true);
+                      setTimeout(() => setCopiedBackupCodesNotice(false), 2500);
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {copiedBackupCodesNotice ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-bold">Kopiert!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Alle kopieren</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => downloadBackupCodesTxt(generatedBackupCodes, settings.clubName)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Als .txt speichern</span>
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(totpDraftSecret);
-                    setCopiedTotpSecret(true);
-                    setTimeout(() => setCopiedTotpSecret(false), 2500);
-                  }}
-                  className="text-sky-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  onClick={handleFinishTotpActivationWithBackupCodes}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition cursor-pointer"
                 >
-                  {copiedTotpSecret ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">Kopiert!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>Kopieren</span>
-                    </>
-                  )}
+                  Ich habe die Codes gesichert – 2FA jetzt fertigstellen
                 </button>
               </div>
-              <p className="font-mono text-xs font-bold text-sky-300 tracking-wider break-all select-all">
-                {formatSecretForDisplay(totpDraftSecret)}
-              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Vorhandene Notfallcodes anzeigen & verwalten */}
+      {showManageBackupCodesModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-7 shadow-2xl max-w-md w-full text-white space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold">Verbleibende Notfallcodes</h2>
+                  <p className="text-[11px] text-slate-400">
+                    {settings.totpBackupCodes?.length || 0} von 10 Codes noch unbenutzt
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManageBackupCodesModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Schritt 3: Aktivierungscode eingeben */}
-            <form onSubmit={handleConfirmTotpActivation} className="space-y-3 pt-2 border-t border-slate-800">
-              <label className="block text-xs font-semibold text-slate-300">
-                3. Bestätigen: Gib den 6-stelligen Code aus deiner App ein
-              </label>
-
-              {totpError && (
-                <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{totpError}</span>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  maxLength={6}
-                  value={totpVerifyCode}
-                  onChange={(e) => setTotpVerifyCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="000000"
-                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-center tracking-widest text-lg font-bold focus:outline-none focus:border-sky-500"
-                />
+            {(!settings.totpBackupCodes || settings.totpBackupCodes.length === 0) ? (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-center space-y-2">
+                <p>Du hast aktuell keine aktiven Notfallcodes mehr.</p>
                 <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-slate-950 font-bold text-xs cursor-pointer transition shadow-md"
+                  type="button"
+                  onClick={handleGenerateNewBackupCodes}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shadow-md"
                 >
-                  2FA aktivieren
+                  Jetzt 10 neue Codes generieren
                 </button>
               </div>
-            </form>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-950 rounded-2xl border border-slate-800 font-mono text-center text-xs font-bold text-amber-300 max-h-56 overflow-y-auto">
+                  {settings.totpBackupCodes.map((code, idx) => (
+                    <div key={code} className="p-2 rounded-xl bg-slate-900 border border-slate-800 select-all">
+                      <span className="text-[10px] text-slate-500 mr-1.5">{idx + 1}.</span>
+                      <span>{code}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText((settings.totpBackupCodes || []).join('\n'));
+                      setCopiedBackupCodesNotice(true);
+                      setTimeout(() => setCopiedBackupCodesNotice(false), 2500);
+                    }}
+                    className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {copiedBackupCodesNotice ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 font-bold">Kopiert!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Alle kopieren</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => downloadBackupCodesTxt(settings.totpBackupCodes || [], settings.clubName)}
+                    className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Als .txt speichern</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowManageBackupCodesModal(false)}
+                  className="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition cursor-pointer"
+                >
+                  Schließen
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

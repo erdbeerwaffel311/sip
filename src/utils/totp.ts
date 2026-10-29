@@ -106,3 +106,98 @@ export async function verifyTotpCode(
 
   return false;
 }
+
+/**
+ * Generiert eine Liste von sicheren, einmaligen Notfall- / Ersatzcodes (Standard: 10 Codes im Format XXXX-XXXX).
+ * Verwendet cryptographically secure random values und schließt verwechslungsanfällige Zeichen (0, O, I, 1) aus.
+ */
+export function generateBackupCodes(count: number = 10): string[] {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const codes: string[] = [];
+  const existing = new Set<string>();
+
+  while (codes.length < count) {
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    let str = '';
+    for (let i = 0; i < 8; i++) {
+      str += chars[bytes[i] % chars.length];
+    }
+    const formatted = `${str.slice(0, 4)}-${str.slice(4)}`;
+    if (!existing.has(formatted)) {
+      existing.add(formatted);
+      codes.push(formatted);
+    }
+  }
+
+  return codes;
+}
+
+/**
+ * Bereinigt einen eingegebenen Notfallcode von Bindestrichen, Leerzeichen etc. und wandelt in Großbuchstaben um.
+ */
+export function normalizeBackupCode(code: string): string {
+  return code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+}
+
+/**
+ * Überprüft einen Notfallcode gegen die Liste vorhandener Codes.
+ * Bei Treffer wird der gefundene Code konsumiert (aus der Liste entfernt),
+ * sodass jeder Notfallcode exakt 1x gültig ist.
+ */
+export function verifyAndConsumeBackupCode(
+  candidateCode: string,
+  backupCodes: string[] = []
+): { valid: boolean; remainingCodes: string[]; usedCode?: string } {
+  const cleanCandidate = normalizeBackupCode(candidateCode);
+  if (!cleanCandidate || cleanCandidate.length < 6) {
+    return { valid: false, remainingCodes: backupCodes };
+  }
+
+  const matchIndex = backupCodes.findIndex(
+    (code) => normalizeBackupCode(code) === cleanCandidate
+  );
+
+  if (matchIndex === -1) {
+    return { valid: false, remainingCodes: backupCodes };
+  }
+
+  const usedCode = backupCodes[matchIndex];
+  const remainingCodes = backupCodes.filter((_, idx) => idx !== matchIndex);
+  return { valid: true, remainingCodes, usedCode };
+}
+
+/**
+ * Erstellt eine Textdatei zum Herunterladen der Notfallcodes
+ */
+export function downloadBackupCodesTxt(codes: string[], clubName: string = 'SiP-Parlament') {
+  const content = [
+    `======================================================`,
+    `NOTFALLCODES / ERSATZCODES FÜR DEN ADMIN-ZUGANG`,
+    `${clubName} - Schüler:innenparlament`,
+    `Erstellt am: ${new Date().toLocaleString('de-AT')}`,
+    `======================================================`,
+    ``,
+    `ANWEISUNGEN:`,
+    `- Jeder dieser 10 Codes kann genau EINMAL verwendet werden,`,
+    `  falls du dein Smartphone verlierst oder die Authenticator-App`,
+    `  nicht verfügbar ist.`,
+    `- Bewahre diese Liste sicher auf (z. B. ausdrucken oder im`,
+    `  Passwort-Manager speichern).`,
+    ``,
+    `DEINE 10 NOTFALLCODES:`,
+    ...codes.map((c, i) => `  [${(i + 1).toString().padStart(2, ' ')}]  ${c}`),
+    ``,
+    `======================================================`,
+  ].join('\n');
+
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `notfallcodes-sip-admin-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

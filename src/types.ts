@@ -26,6 +26,7 @@ export interface AppSettings {
   adminEmail?: string;
   totpSecret?: string;
   totpEnabled?: boolean;
+  totpBackupCodes?: string[];
   allowedMembers: string[];
   memberAccounts: MemberAccount[];
   pocketbaseUrl?: string;
@@ -152,6 +153,7 @@ export const DEFAULT_SIP_SETTINGS: AppSettings = {
   adminEmail: '',
   totpSecret: '',
   totpEnabled: false,
+  totpBackupCodes: [],
   allowedMembers: DEFAULT_ALLOWED_MEMBERS,
   memberAccounts: DEFAULT_ALLOWED_MEMBERS.map((name) => ({
     name,

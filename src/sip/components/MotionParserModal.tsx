@@ -227,7 +227,7 @@ export const MotionParserModal: React.FC<MotionParserModalProps> = ({
       setManualUploadRequired(false);
       setPendingManifest(null);
 
-      // 4. Erst dieses vereinte finalMotions-Array an Supabase / den Haupt-State der App übergeben
+      // 4. Erst dieses vereinte finalMotions-Array an Pocketbase / den Haupt-State der App übergeben
       onImport(finalMotions, finalResult.strategyNotes);
     } catch (err: any) {
       console.error('Fehler nach manuellem PDF-Upload:', err);

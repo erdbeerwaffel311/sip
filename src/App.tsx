@@ -9,6 +9,7 @@ import { AppSettings, DEFAULT_SIP_SETTINGS, isAccountExpired, MemberAccount } fr
 import suLogo from './assets/su-logo.png';
 import { SipLoginView } from './components/SipLoginView';
 import { SipAdminView } from './components/SipAdminView';
+import { AdminUnlockModal } from './components/AdminUnlockModal';
 import { SipMainView } from './sip/components/SipMainView';
 import { sipRealtime } from './sip/sipRealtime';
 import { verifyAdmin2FACode, querySipRow, upsertSipRow, SIP_CONFIG_ROW_ID } from './utils/pocketbaseSync';
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
           strategiePassword: parsed.strategiePassword || 'strategie2026',
           totpSecret: parsed.totpSecret || '',
           totpEnabled: parsed.totpEnabled ?? false,
+          totpBackupCodes: Array.isArray(parsed.totpBackupCodes) ? parsed.totpBackupCodes : [],
         };
       }
     } catch (loadSettingsErr) {}
@@ -59,6 +61,7 @@ export const App: React.FC = () => {
 
   const [currentView, setCurrentView] = useState<'parliament' | 'admin'>('parliament');
   const [initial2FAVerified, setInitial2FAVerified] = useState(false);
+  const [showAdminUnlockModal, setShowAdminUnlockModal] = useState(false);
 
   // Automatische Erkennung beim Öffnen über den 2FA-Bestätigungslink aus der E-Mail (wie im Inventurprogramm)
   useEffect(() => {
@@ -119,6 +122,7 @@ export const App: React.FC = () => {
           adminEmail: payload.adminEmail !== undefined ? payload.adminEmail : prev.adminEmail,
           totpSecret: payload.totpSecret !== undefined ? payload.totpSecret : prev.totpSecret,
           totpEnabled: payload.totpEnabled !== undefined ? payload.totpEnabled : prev.totpEnabled,
+          totpBackupCodes: payload.totpBackupCodes !== undefined ? payload.totpBackupCodes : prev.totpBackupCodes,
         }));
       }
     }
@@ -147,6 +151,7 @@ export const App: React.FC = () => {
       adminEmail: newSettings.adminEmail,
       totpSecret: newSettings.totpSecret,
       totpEnabled: newSettings.totpEnabled,
+      totpBackupCodes: newSettings.totpBackupCodes,
     };
 
     const recordData = {
@@ -157,9 +162,27 @@ export const App: React.FC = () => {
     await upsertSipRow(recordData);
   }
 
-  function handleLoginSuccess(account: MemberAccount) {
+  async function handleConsumeBackupCode(usedCode: string): Promise<boolean> {
+    const currentCodes = settings.totpBackupCodes || [];
+    const normalizedUsed = usedCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const nextCodes = currentCodes.filter(
+      (c) => c.replace(/[^A-Za-z0-9]/g, '').toUpperCase() !== normalizedUsed
+    );
+    const newSettings: AppSettings = {
+      ...settings,
+      totpBackupCodes: nextCodes,
+    };
+    await handleSaveSettings(newSettings);
+    return true;
+  }
+
+  function handleLoginSuccess(account: MemberAccount, unlockAdmin?: boolean) {
     setCurrentUser(account);
     localStorage.setItem(STORAGE_KEYS.LOGGED_USER, JSON.stringify(account));
+    if (unlockAdmin || account.role === 'admin') {
+      setIsAdminUnlocked(true);
+      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
+    }
   }
 
   function handleLogout() {
@@ -170,31 +193,11 @@ export const App: React.FC = () => {
     localStorage.removeItem(STORAGE_KEYS.ADMIN_UNLOCKED);
   }
 
-  async function handleAdminButtonClick() {
+  function handleAdminButtonClick() {
     if (isAdminUnlocked) {
       setCurrentView(currentView === 'admin' ? 'parliament' : 'admin');
     } else {
-      const pass = prompt('Bitte Administrator-Passwort eingeben:');
-      if (pass === null) return;
-      if (pass !== settings.adminPassword) {
-        alert('ungültiges Passwort, bitte versuche es erneut!');
-        return;
-      }
-
-      // Falls Authenticator-App (TOTP) aktiviert ist, frage nach dem 6-stelligen Code:
-      if (settings.totpEnabled && settings.totpSecret) {
-        const code = prompt('Bitte 6-stelligen Code aus der Authenticator-App eingeben:');
-        if (code === null) return;
-        const valid = await verifyTotpCode(settings.totpSecret, code);
-        if (!valid) {
-          alert('ungültiges Passwort, bitte versuche es erneut!');
-          return;
-        }
-      }
-
-      setIsAdminUnlocked(true);
-      localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
-      setCurrentView('admin');
+      setShowAdminUnlockModal(true);
     }
   }
 
@@ -204,6 +207,11 @@ export const App: React.FC = () => {
       <SipLoginView
         memberAccounts={settings.memberAccounts}
         strategiePassword={settings.strategiePassword}
+        adminPassword={settings.adminPassword}
+        totpEnabled={settings.totpEnabled}
+        totpSecret={settings.totpSecret}
+        totpBackupCodes={settings.totpBackupCodes || []}
+        onConsumeBackupCode={handleConsumeBackupCode}
         onLoginSuccess={handleLoginSuccess}
       />
     );
@@ -311,6 +319,22 @@ export const App: React.FC = () => {
         <span className="hidden sm:inline text-slate-700">•</span>
         <span className="text-slate-400 font-semibold">© Elias Mathis</span>
       </footer>
+
+      {/* Modal zum Entsperren des Admin-Bereichs per Passwort & 2FA / Notfallcode */}
+      <AdminUnlockModal
+        isOpen={showAdminUnlockModal}
+        onClose={() => setShowAdminUnlockModal(false)}
+        adminPassword={settings.adminPassword}
+        totpEnabled={settings.totpEnabled}
+        totpSecret={settings.totpSecret}
+        totpBackupCodes={settings.totpBackupCodes || []}
+        onConsumeBackupCode={handleConsumeBackupCode}
+        onUnlockSuccess={() => {
+          setIsAdminUnlocked(true);
+          localStorage.setItem(STORAGE_KEYS.ADMIN_UNLOCKED, 'true');
+          setCurrentView('admin');
+        }}
+      />
     </div>
   );
 };
